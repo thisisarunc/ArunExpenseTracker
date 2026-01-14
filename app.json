@@ -20,7 +20,10 @@
         "backgroundColor": "#FFF9FC"
       },
       "package": "com.moneyplus.expensetracker",
-      "permissions": ["android.permission.READ_SMS", "android.permission.RECEIVE_SMS"]
+      "permissions": [
+        "android.permission.READ_SMS",
+        "android.permission.RECEIVE_SMS"
+      ]
     },
     "ios": {
       "supportsTablet": true,
@@ -28,7 +31,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "auto"
+        "projectId": "41d37f33-d23f-4e63-a586-dcddb5d276dc"
       }
     }
   }
