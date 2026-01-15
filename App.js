@@ -1,1486 +1,1112 @@
-import React, { useState, useEffect } from 'react';
+// App.js
+
+import React, { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
+  FlatList,
   TouchableOpacity,
-  ScrollView,
   TextInput,
-  Modal,
+  Animated,
   SafeAreaView,
-  StatusBar,
-  Dimensions,
-  Alert,
+  Modal,
+  KeyboardAvoidingView,
   Platform,
-  PermissionsAndroid,
-  NativeModules,
-  ActivityIndicator,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Svg, { Circle } from 'react-native-svg';
-import { Ionicons } from '@expo/vector-icons';
-import { parseSMS, isBankSender } from './smsParser';
+  Alert,
+  RefreshControl,
+  Dimensions,
+  ScrollView,
+} from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import Toast from "react-native-root-toast";
+import { Swipeable } from "react-native-gesture-handler";
+import { Picker } from "@react-native-picker/picker";
+import { PieChart } from "react-native-chart-kit";
+import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
-const { width } = Dimensions.get('window');
+// ========== Default categories, payment modes, currencies ==========
+const CATEGORIES = [
+  "Food",
+  "Transport",
+  "Shopping",
+  "Bills",
+  "Entertainment",
+  "Health",
+  "Education",
+  "Other",
+];
+const PAYMENT_MODES = ["Cash", "Card", "UPI", "Other"];
+const CURRENCIES = [
+  { symbol: "₹", code: "INR" },
+  { symbol: "$", code: "USD" },
+  { symbol: "€", code: "EUR" },
+  { symbol: "£", code: "GBP" },
+];
 
-// Try to import SMS module (Android only)
-let SmsAndroid = null;
-if (Platform.OS === 'android') {
-  try {
-    const SmsModule = require('react-native-get-sms-android');
-    SmsAndroid = SmsModule.default || SmsModule;
-  } catch (e) {
-    console.log('SMS module not available:', e);
-  }
+// ========== Demo Recurring Transactions ==========
+const RECUR_OPTIONS = [
+  { label: "None", value: null },
+  { label: "Daily", value: "daily" },
+  { label: "Weekly", value: "weekly" },
+  { label: "Monthly", value: "monthly" },
+];
+
+const defaultBudgets = {
+  Food: 5000,
+  Transport: 3000,
+  Shopping: 4000,
+  Bills: 6000,
+  Entertainment: 2000,
+  Health: 1500,
+  Education: 2500,
+  Other: 1000,
+};
+
+const pieColors = [
+  "#64b5f6",
+  "#ffa726",
+  "#81c784",
+  "#ba68c8",
+  "#f06292",
+  "#ffd54f",
+  "#4db6ac",
+  "#e57373",
+];
+
+// ========== Toast helper ==========
+function showToast(msg) {
+  Toast.show(msg, {
+    duration: Toast.durations.SHORT,
+    position: Toast.positions.BOTTOM,
+    shadow: true,
+    backgroundColor: "#323232",
+  });
 }
 
-// Payment modes
-const paymentModes = [
-  { id: 'cash', name: 'Cash', emoji: '💵', color: '#4CAF50', bg: '#E8F5E9' },
-  { id: 'credit', name: 'Credit Card', emoji: '💳', color: '#E91E63', bg: '#FCE4EC' },
-  { id: 'debit', name: 'Debit Card', emoji: '💳', color: '#2196F3', bg: '#E3F2FD' },
-  { id: 'upi', name: 'UPI', emoji: '📱', color: '#9C27B0', bg: '#F3E5F5' },
-  { id: 'netbanking', name: 'Net Banking', emoji: '🏦', color: '#FF9800', bg: '#FFF3E0' },
-];
+// ========== Helper to format currency ==========
+function formatCurrency(amount, currency) {
+  let symbol = CURRENCIES.find((c) => c.code === currency)?.symbol || "₹";
+  return `${symbol}${parseFloat(amount).toFixed(2)}`;
+}
 
-// Icon library
-const iconLibrary = {
-  burger: { emoji: '🍔', bg: '#FFF3E5' },
-  biryani: { emoji: '🍛', bg: '#FFF8DC' },
-  coffee: { emoji: '☕', bg: '#F5F5DC' },
-  pizza: { emoji: '🍕', bg: '#FFF3E0' },
-  cake: { emoji: '🍰', bg: '#FFF0F5' },
-  shopping: { emoji: '🛍️', bg: '#FFE4E1' },
-  dress: { emoji: '👗', bg: '#FFF0F5' },
-  bag: { emoji: '👜', bg: '#FFEFD5' },
-  car: { emoji: '🚗', bg: '#E6E6FA' },
-  auto: { emoji: '🛺', bg: '#FFFACD' },
-  metro: { emoji: '🚇', bg: '#E6E6FA' },
-  fuel: { emoji: '⛽', bg: '#FFE4E1' },
-  plane: { emoji: '✈️', bg: '#E6F3FF' },
-  house: { emoji: '🏠', bg: '#FFEFD5' },
-  rent: { emoji: '🏢', bg: '#F0F0F0' },
-  electricity: { emoji: '💡', bg: '#FFFACD' },
-  water: { emoji: '💧', bg: '#E6F3FF' },
-  gas: { emoji: '🔥', bg: '#FFE4E1' },
-  wifi: { emoji: '📶', bg: '#E6E6FA' },
-  phone: { emoji: '📱', bg: '#F0F0F0' },
-  movie: { emoji: '🎬', bg: '#FFE4E1' },
-  game: { emoji: '🎮', bg: '#F3E5FF' },
-  party: { emoji: '🎉', bg: '#FFE4E1' },
-  hospital: { emoji: '🏥', bg: '#FFE4E1' },
-  medicine: { emoji: '💊', bg: '#FFF0F5' },
-  gym: { emoji: '🏋️', bg: '#E6E6FA' },
-  book: { emoji: '📚', bg: '#FFEFD5' },
-  laptop: { emoji: '💻', bg: '#F0F0F0' },
-  bill: { emoji: '📄', bg: '#F0F0F0' },
-  tax: { emoji: '🧾', bg: '#F0F0F0' },
-  insurance: { emoji: '🛡️', bg: '#E6F3FF' },
-  invest: { emoji: '📈', bg: '#E5FFF5' },
-  emi: { emoji: '🏦', bg: '#FFF3E0' },
-  salon: { emoji: '💇', bg: '#FFF0F5' },
-  family: { emoji: '👨‍👩‍👧', bg: '#FFE4E1' },
-  donation: { emoji: '🙏', bg: '#FFF0F5' },
-  salary: { emoji: '💰', bg: '#E5FFF5' },
-  bonus: { emoji: '🎊', bg: '#FFFACD' },
-  freelance: { emoji: '💼', bg: '#E6E6FA' },
-  refund: { emoji: '💸', bg: '#E5FFF5' },
-  interest: { emoji: '🏦', bg: '#FFF3E0' },
-  groceries: { emoji: '🛒', bg: '#E8F5E9' },
-  transport: { emoji: '🚌', bg: '#E3F2FD' },
-  entertainment: { emoji: '🎭', bg: '#FCE4EC' },
-  mobile: { emoji: '📱', bg: '#F3E5F5' },
-  education: { emoji: '🎓', bg: '#E6E6FA' },
-  food: { emoji: '🍽️', bg: '#FFF3E0' },
-  other: { emoji: '📦', bg: '#F5F5F5' },
-};
-
-// Default categories
-const defaultCategories = [
-  { id: 'food', name: 'Food & Dining', icon: 'biryani', type: 'expense' },
-  { id: 'groceries', name: 'Groceries', icon: 'groceries', type: 'expense' },
-  { id: 'transport', name: 'Transport', icon: 'auto', type: 'expense' },
-  { id: 'fuel', name: 'Fuel', icon: 'fuel', type: 'expense' },
-  { id: 'shopping', name: 'Shopping', icon: 'bag', type: 'expense' },
-  { id: 'entertainment', name: 'Entertainment', icon: 'movie', type: 'expense' },
-  { id: 'rent', name: 'Rent', icon: 'rent', type: 'expense' },
-  { id: 'electricity', name: 'Electricity', icon: 'electricity', type: 'expense' },
-  { id: 'mobile', name: 'Mobile', icon: 'phone', type: 'expense' },
-  { id: 'wifi', name: 'Internet', icon: 'wifi', type: 'expense' },
-  { id: 'health', name: 'Health', icon: 'hospital', type: 'expense' },
-  { id: 'medicine', name: 'Medicine', icon: 'medicine', type: 'expense' },
-  { id: 'education', name: 'Education', icon: 'book', type: 'expense' },
-  { id: 'emi', name: 'EMI', icon: 'emi', type: 'expense' },
-  { id: 'insurance', name: 'Insurance', icon: 'insurance', type: 'expense' },
-  { id: 'investment', name: 'Investment', icon: 'invest', type: 'expense' },
-  { id: 'other', name: 'Other', icon: 'other', type: 'expense' },
-  { id: 'salary', name: 'Salary', icon: 'salary', type: 'income' },
-  { id: 'bonus', name: 'Bonus', icon: 'bonus', type: 'income' },
-  { id: 'freelance', name: 'Freelance', icon: 'freelance', type: 'income' },
-  { id: 'interest', name: 'Interest', icon: 'interest', type: 'income' },
-  { id: 'refund', name: 'Refund', icon: 'refund', type: 'income' },
-];
-
-// Format currency
-const formatCurrency = (amount) => {
-  return '₹' + new Intl.NumberFormat('en-IN').format(Math.round(amount));
-};
-
-// Get month name
-const getMonthName = (month) => {
-  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  return months[month];
-};
-
-// Donut Chart Component
-const DonutChart = ({ data, total }) => {
-  const size = 200;
-  const strokeWidth = 30;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const center = size / 2;
-  const colors = ['#FF6B8A', '#9B6BFF', '#6BAFFF', '#FFB86B', '#6BFF9B', '#FF6BDF', '#6BFFF0', '#FFE86B'];
-  let cumulativePercent = 0;
-
-  return (
-    <View style={{ alignItems: 'center', marginVertical: 20 }}>
-      <Svg width={size} height={size}>
-        <Circle cx={center} cy={center} r={radius} fill="none" stroke="#F5F5F5" strokeWidth={strokeWidth} />
-        {data.map((item, index) => {
-          const percentage = total > 0 ? (item.total / total) * 100 : 0;
-          const strokeDasharray = circumference;
-          const strokeDashoffset = circumference - (percentage / 100) * circumference;
-          const rotation = (cumulativePercent / 100) * 360 - 90;
-          cumulativePercent += percentage;
-          return (
-            <Circle key={item.id} cx={center} cy={center} r={radius} fill="none" stroke={colors[index % colors.length]} strokeWidth={strokeWidth} strokeDasharray={strokeDasharray} strokeDashoffset={strokeDashoffset} rotation={rotation} origin={`${center}, ${center}`} />
-          );
-        })}
-      </Svg>
-      <View style={styles.chartCenter}>
-        <Text style={styles.chartLabel}>Total Expenses</Text>
-        <Text style={styles.chartAmount}>{formatCurrency(total)}</Text>
-      </View>
-    </View>
-  );
-};
-
+// ========== Main App ==========
 export default function App() {
+  const [dark, setDark] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
   const [transactions, setTransactions] = useState([]);
-  const [categories, setCategories] = useState(defaultCategories);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [showSMSModal, setShowSMSModal] = useState(false);
-  const [activeTab, setActiveTab] = useState('home');
-  const [transactionType, setTransactionType] = useState('expense');
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const [newTransaction, setNewTransaction] = useState({
-    amount: '',
-    note: '',
-    category: 'food',
-    paymentMode: 'cash',
-    date: new Date().toISOString().split('T')[0],
+  const [editing, setEditing] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState({
+    category: "",
+    paymentMode: "",
+    currency: "INR",
+    from: null,
+    to: null,
   });
-  const [newCategory, setNewCategory] = useState({ name: '', icon: 'other', type: 'expense' });
-  const [loading, setLoading] = useState(true);
-  const [budget, setBudget] = useState(50000);
-  const [chartView, setChartView] = useState('category');
-  const [editingTransaction, setEditingTransaction] = useState(null);
-  const [cardMappings, setCardMappings] = useState({});
-  const [showCardMapping, setShowCardMapping] = useState(false);
-  const [newCardLast4, setNewCardLast4] = useState('');
-  const [newCardType, setNewCardType] = useState('debit');
-  const [detailView, setDetailView] = useState(null);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  
-  // SMS related states
-  const [smsPermission, setSmsPermission] = useState(false);
-  const [smsLoading, setSmsLoading] = useState(false);
-  const [parsedSMS, setParsedSMS] = useState([]);
-  const [selectedSMS, setSelectedSMS] = useState({});
-  const [lastSyncDate, setLastSyncDate] = useState(null);
+  const [budgets, setBudgets] = useState(defaultBudgets);
+  const [budgetModal, setBudgetModal] = useState(false);
+  const [newBudget, setNewBudget] = useState({});
+  const [showDatePicker, setShowDatePicker] = useState({ show: false, field: null });
+  const [toast, setToast] = useState("");
+  const [form, setForm] = useState({
+    amount: "",
+    category: "Food",
+    note: "",
+    date: new Date(),
+    paymentMode: "Cash",
+    currency: "INR",
+    recur: null,
+  });
+  const [errors, setErrors] = useState({});
+  const [recurringTransactions, setRecurringTransactions] = useState([]);
+  const scrollY = useRef(new Animated.Value(0)).current;
 
-  // Load data
-  useEffect(() => {
-    loadData();
-  }, []);
+  // ========== Theme ==========
+  const theme = dark ? stylesDark : stylesLight;
 
-  // Save data
-  useEffect(() => {
-    if (!loading) {
-      saveData();
-    }
-  }, [transactions, categories, budget, lastSyncDate, cardMappings]);
-
-  const loadData = async () => {
-    try {
-      const data = await AsyncStorage.getItem('moneyplus-data-v2');
-      if (data) {
-        const parsed = JSON.parse(data);
-        setTransactions(parsed.transactions || []);
-        setBudget(parsed.budget || 50000);
-        setLastSyncDate(parsed.lastSyncDate || null);
-        setCardMappings(parsed.cardMappings || {});
-        if (parsed.categories?.length > 0) {
-          setCategories(parsed.categories);
-        }
-      }
-    } catch (e) {
-      console.log('Error loading data:', e);
-    }
-    setLoading(false);
+  // ========== Handle Pull to Refresh ==========
+  const onRefresh = async () => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1200);
   };
 
-  const saveData = async () => {
-    try {
-      await AsyncStorage.setItem('moneyplus-data-v2', JSON.stringify({ 
-        transactions, categories, budget, lastSyncDate, cardMappings
-      }));
-    } catch (e) {
-      console.log('Error saving data:', e);
-    }
+  // ========== Inline Validation ==========
+  const validateForm = () => {
+    let errs = {};
+    if (!form.amount || isNaN(form.amount) || Number(form.amount) <= 0) errs.amount = "Invalid amount.";
+    if (!form.category) errs.category = "Select a category";
+    if (!form.paymentMode) errs.paymentMode = "Select payment mode";
+    if (!form.currency) errs.currency = "Select currency";
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
   };
 
-  // Request SMS permission
-  const requestSMSPermission = async () => {
-    if (Platform.OS !== 'android') {
-      Alert.alert('Not Supported', 'SMS reading is only available on Android devices.');
-      return false;
-    }
-
-    try {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_SMS,
-        {
-          title: 'SMS Permission',
-          message: 'Money+ needs access to read your SMS to auto-detect bank transactions.',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
-        }
-      );
-      const isGranted = granted === PermissionsAndroid.RESULTS.GRANTED;
-      setSmsPermission(isGranted);
-      return isGranted;
-    } catch (err) {
-      console.warn(err);
-      return false;
-    }
-  };
-
-  // Read SMS messages
-  const readSMSMessages = async () => {
-    if (!SmsAndroid) {
-      Alert.alert(
-        'SMS Feature',
-        'SMS reading requires a native Android build. Use "eas build" to create an APK with this feature.\n\nFor now, you can manually add transactions.',
-        [{ text: 'OK' }]
-      );
+  // ========== Add/Edit Transaction Logic ==========
+  function handleSaveTransaction() {
+    if (!validateForm()) {
+      showToast("Please correct highlighted fields.");
       return;
     }
 
-    const hasPermission = smsPermission || await requestSMSPermission();
-    if (!hasPermission) {
-      Alert.alert('Permission Denied', 'SMS permission is required to read bank messages.');
-      return;
-    }
-
-    setSmsLoading(true);
-    
-    try {
-      // Read SMS from last 30 days
-      const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-      
-      const filter = {
-        box: 'inbox',
-        minDate: thirtyDaysAgo,
-        maxCount: 500,
-      };
-
-      SmsAndroid.list(
-        JSON.stringify(filter),
-        (fail) => {
-          console.log('Failed to read SMS:', fail);
-          setSmsLoading(false);
-          Alert.alert('Error', 'Failed to read SMS messages.');
-        },
-        (count, smsList) => {
-          const messages = JSON.parse(smsList);
-          
-          // Filter and parse bank SMS
-          const bankMessages = messages
-            .filter(sms => isBankSender(sms.address))
-            .map(sms => {
-              const parsed = parseSMS(
-                sms.body, 
-                sms.address, 
-                new Date(parseInt(sms.date)).toISOString().split('T')[0]
-              );
-              return { ...sms, parsed };
-            })
-            .filter(sms => sms.parsed.isTransaction && sms.parsed.amount > 0)
-            .sort((a, b) => parseInt(b.date) - parseInt(a.date));
-
-          // Filter out already added transactions
-          const existingIds = new Set(transactions.map(t => t.smsId));
-          const newMessages = bankMessages.filter(sms => !existingIds.has(sms._id));
-
-          setParsedSMS(newMessages);
-          setSmsLoading(false);
-          
-          if (newMessages.length === 0) {
-            Alert.alert('No New Transactions', 'No new bank transactions found in your SMS.');
-          } else {
-            setShowSMSModal(true);
-          }
-        }
-      );
-    } catch (error) {
-      console.error('Error reading SMS:', error);
-      setSmsLoading(false);
-      Alert.alert('Error', 'Failed to read SMS messages.');
-    }
-  };
-
-  // Toggle SMS selection
-  const toggleSMSSelection = (smsId) => {
-    setSelectedSMS(prev => ({
-      ...prev,
-      [smsId]: !prev[smsId]
-    }));
-  };
-
-  // Select all SMS
-  const selectAllSMS = () => {
-    const allSelected = parsedSMS.every(sms => selectedSMS[sms._id]);
-    if (allSelected) {
-      setSelectedSMS({});
-    } else {
-      const newSelected = {};
-      parsedSMS.forEach(sms => {
-        newSelected[sms._id] = true;
-      });
-      setSelectedSMS(newSelected);
-    }
-  };
-
-  // Import selected SMS as transactions
-  const importSelectedSMS = () => {
-    const selectedMessages = parsedSMS.filter(sms => selectedSMS[sms._id]);
-    
-    if (selectedMessages.length === 0) {
-      Alert.alert('No Selection', 'Please select at least one transaction to import.');
-      return;
-    }
-
-    const newTransactions = selectedMessages.map(sms => {
-      const category = categories.find(c => c.id === sms.parsed.category) || 
-                      categories.find(c => c.id === 'other');
-      
-      return {
-        id: Date.now() + Math.random(),
-        smsId: sms._id,
-        amount: sms.parsed.amount,
-        note: sms.parsed.merchant || category.name,
-        category: sms.parsed.category || 'other',
-        paymentMode: sms.parsed.paymentMode || 'debit',
-        date: sms.parsed.date,
-        type: sms.parsed.type,
-        source: 'sms',
-      };
-    });
-
-    setTransactions(prev => [...newTransactions, ...prev]);
-    setLastSyncDate(new Date().toISOString());
-    setShowSMSModal(false);
-    setSelectedSMS({});
-    setParsedSMS([]);
-    
-    Alert.alert('Success', `${newTransactions.length} transactions imported successfully!`);
-  };
-
-  const addTransaction = () => {
-    const amount = parseFloat(newTransaction.amount);
-    if (!amount || amount <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
-      return;
-    }
-
-    const cat = categories.find(c => c.id === newTransaction.category);
-    
-    if (editingTransaction) {
-      // Edit mode
-      const updatedTransaction = {
-        ...editingTransaction,
-        amount,
-        note: newTransaction.note || cat?.name || 'Transaction',
-        category: newTransaction.category,
-        paymentMode: newTransaction.paymentMode,
-        date: newTransaction.date,
-        type: transactionType,
-      };
-      setTransactions(prev => prev.map(t => t.id === editingTransaction.id ? updatedTransaction : t));
-      setEditingTransaction(null);
-    } else {
-      // Add mode
-      const transaction = {
-        id: Date.now(),
-        amount,
-        note: newTransaction.note || cat?.name || 'Transaction',
-        category: newTransaction.category,
-        paymentMode: newTransaction.paymentMode,
-        date: newTransaction.date,
-        type: transactionType,
-        source: 'manual',
-      };
-      setTransactions(prev => [transaction, ...prev]);
-    }
-
-    setNewTransaction({
-      amount: '',
-      note: '',
-      category: transactionType === 'income' ? 'salary' : 'food',
-      paymentMode: 'cash',
-      date: new Date().toISOString().split('T')[0],
-    });
-    setShowAddModal(false);
-  };
-
-  const editTransaction = (transaction) => {
-    setEditingTransaction(transaction);
-    setTransactionType(transaction.type);
-    setNewTransaction({
-      amount: transaction.amount.toString(),
-      note: transaction.note,
-      category: transaction.category,
-      paymentMode: transaction.paymentMode,
-      date: transaction.date,
-    });
-    setShowAddModal(true);
-  };
-
-  const addCardMapping = () => {
-    if (!newCardLast4 || newCardLast4.length !== 4) {
-      Alert.alert('Error', 'Please enter last 4 digits');
-      return;
-    }
-    setCardMappings(prev => ({ ...prev, [newCardLast4]: newCardType }));
-    setNewCardLast4('');
-    setNewCardType('debit');
-  };
-
-  const deleteCardMapping = (last4) => {
-    setCardMappings(prev => {
-      const updated = { ...prev };
-      delete updated[last4];
-      return updated;
-    });
-  };
-
-  const addCategory = () => {
-    if (!newCategory.name.trim()) {
-      Alert.alert('Error', 'Please enter a category name');
-      return;
-    }
-
-    const category = {
-      id: `custom_${Date.now()}`,
-      name: newCategory.name,
-      icon: newCategory.icon,
-      type: newCategory.type,
+    const txn = {
+      id: editing?.id || Date.now() + Math.random().toString(36).substring(2),
+      amount: Number(form.amount),
+      category: form.category,
+      date: form.date,
+      note: form.note,
+      paymentMode: form.paymentMode,
+      currency: form.currency,
+      recur: form.recur,
     };
 
-    setCategories(prev => [...prev, category]);
-    setNewCategory({ name: '', icon: 'other', type: 'expense' });
-    setShowCategoryModal(false);
-  };
+    if (editing) {
+      setTransactions((ts) =>
+        ts.map((t) => (t.id === editing.id ? txn : t))
+      );
+      showToast("Transaction updated!");
+    } else {
+      setTransactions((ts) => [txn, ...ts]);
+      showToast("Transaction added!");
+    }
 
-  const deleteTransaction = (id) => {
-    Alert.alert('Delete', 'Are you sure you want to delete this transaction?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => setTransactions(prev => prev.filter(t => t.id !== id)) },
+    // Add to recurring list if applicable
+    if (form.recur && !editing) {
+      setRecurringTransactions((txns) => [txn, ...txns]);
+    }
+    setEditing(null);
+    setModalVisible(false);
+    setForm({
+      amount: "",
+      category: "Food",
+      note: "",
+      date: new Date(),
+      paymentMode: "Cash",
+      currency: filters.currency,
+      recur: null,
+    });
+    setErrors({});
+  }
+
+  // ========== Edit Transaction ==========
+  function handleEditTransaction(txn) {
+    setEditing(txn);
+    setForm({ ...txn });
+    setModalVisible(true);
+  }
+
+  // ========== Swipe-to-delete ==========
+  const handleDeleteTransaction = (txn) => {
+    Alert.alert("Delete?", "Are you sure you want to delete?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          setTransactions((ts) => ts.filter((t) => t.id !== txn.id));
+          setRecurringTransactions((txns) => txns.filter((t) => t.id !== txn.id));
+          showToast("Transaction deleted");
+        },
+      },
     ]);
   };
 
-  // Group transactions by date
-  const groupByDate = (txns) => {
-    const groups = {};
-    txns.forEach(t => {
-      if (!groups[t.date]) groups[t.date] = [];
-      groups[t.date].push(t);
+  // ========== Filter/Search/Sort ==========
+  const filteredTransactions = useMemo(() => {
+    let list = [...transactions];
+    if (filters.category) list = list.filter((t) => t.category === filters.category);
+    if (filters.paymentMode) list = list.filter((t) => t.paymentMode === filters.paymentMode);
+    if (filters.currency) list = list.filter((t) => t.currency === filters.currency);
+    if (filters.from) list = list.filter((t) => new Date(t.date) >= filters.from);
+    if (filters.to) list = list.filter((t) => new Date(t.date) <= filters.to);
+    if (search)
+      list = list.filter(
+        (t) =>
+          t.note?.toLowerCase().includes(search.toLowerCase()) ||
+          t.category?.toLowerCase().includes(search.toLowerCase())
+      );
+    return list.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [transactions, filters, search]);
+
+  // ========== Pie Chart Data ==========
+  const pieChartData = useMemo(() => {
+    let data = {};
+    filteredTransactions.forEach((t) => {
+      data[t.category] = (data[t.category] || 0) + t.amount;
     });
-    return Object.keys(groups)
-      .sort((a, b) => new Date(b) - new Date(a))
-      .map(date => ({
-        date,
-        transactions: groups[date],
-        totalExpense: groups[date].filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
-        totalIncome: groups[date].filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0),
-      }));
-  };
+    return Object.entries(data).map(([cat, val], idx) => ({
+      name: cat,
+      amount: val,
+      color: pieColors[idx % pieColors.length],
+      legendFontColor: theme.text.color,
+      legendFontSize: 12,
+    }));
+  }, [filteredTransactions, theme]);
 
-  const formatDateHeader = (dateStr) => {
-    const date = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    if (date.toDateString() === today.toDateString()) return 'Today';
-    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    return date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
-  };
+  // ========== Calculate spent per category ==========
+  function spentByCategory(cat) {
+    return filteredTransactions
+      .filter((t) => t.category === cat)
+      .reduce((sum, t) => sum + t.amount, 0);
+  }
 
-  const monthTransactions = transactions
-    .filter(t => {
-      const d = new Date(t.date);
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-    })
-    .sort((a, b) => new Date(b.date) - new Date(a.date)); // Latest first
+  // ========== Export CSV ==========
+  async function handleExportCSV() {
+    try {
+      let csv = "Date,Category,Amount,Note,Mode,Currency\n";
+      for (let t of filteredTransactions) {
+        csv += `${new Date(t.date).toLocaleDateString()},${t.category},${t.amount},"${(t.note || "")
+          .replace(/"/g, '""')}",${t.paymentMode},${t.currency}\n`;
+      }
+      const fileUri = FileSystem.cacheDirectory + "expenses.csv";
+      await FileSystem.writeAsStringAsync(fileUri, csv, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      await Sharing.shareAsync(fileUri, {
+        mimeType: "text/csv",
+        dialogTitle: "Export CSV",
+      });
+      showToast("CSV Exported");
+    } catch (err) {
+      alert("CSV Export failed: " + err.message);
+    }
+  }
 
-  const totalIncome = monthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-  const totalExpense = monthTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  const balance = totalIncome - totalExpense;
-
-  const categoryStats = categories
-    .filter(c => c.type === 'expense')
-    .map(cat => ({
-      ...cat,
-      total: monthTransactions.filter(t => t.category === cat.id && t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
-    }))
-    .filter(c => c.total > 0)
-    .sort((a, b) => b.total - a.total);
-
-  // Calculate payment mode statistics
-  const paymentStats = paymentModes
-    .map(mode => ({
-      ...mode,
-      total: monthTransactions.filter(t => t.paymentMode === mode.id && t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
-    }))
-    .filter(p => p.total > 0)
-    .sort((a, b) => b.total - a.total);
-
-  const prevMonth = () => {
-    if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(currentYear - 1); }
-    else setCurrentMonth(currentMonth - 1);
-  };
-
-  const nextMonth = () => {
-    if (currentMonth === 11) { setCurrentMonth(0); setCurrentYear(currentYear + 1); }
-    else setCurrentMonth(currentMonth + 1);
-  };
-
-  const colors = ['#FF6B8A', '#9B6BFF', '#6BAFFF', '#FFB86B', '#6BFF9B', '#FF6BDF'];
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingIcon}>🌸</Text>
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
+  // ========== SMS Import ==========
+  // Placeholder: use a real library in production, e.g. react-native-sms-listener
+  function handleImportSMS() {
+    Alert.alert(
+      "Import from SMS",
+      "This feature requires permission to read SMS on device. In production, link a SMS reading library and implement your own parsing logic.",
+      [{ text: "OK" }]
     );
   }
 
+  // ========== Recurring Transaction Logic ==========
+  useEffect(() => {
+    // For demo: Add recurring transactions if not present for "today"
+    const today = new Date();
+    let added = false;
+    recurringTransactions.forEach((t) => {
+      let last = transactions.find(
+        (tx) => tx.recur === t.recur && tx.category === t.category && tx.amount === t.amount
+      );
+      let lastDate = last ? new Date(last.date) : null;
+      let shouldAdd = false;
+      if (t.recur === "daily") {
+        shouldAdd = !lastDate || lastDate.toDateString() !== today.toDateString();
+      }
+      if (t.recur === "weekly") {
+        let thisWeek = getWeek(today),
+          lastWeek = lastDate ? getWeek(lastDate) : null;
+        shouldAdd = !lastDate || thisWeek !== lastWeek;
+      }
+      if (t.recur === "monthly") {
+        shouldAdd =
+          !lastDate ||
+          today.getFullYear() !== lastDate.getFullYear() ||
+          today.getMonth() !== lastDate.getMonth();
+      }
+      // Add a recurring transaction if missing
+      if (shouldAdd) {
+        const txn = {
+          ...t,
+          id: Date.now() + Math.random().toString(),
+          date: today,
+        };
+        setTransactions((ts) => [txn, ...ts]);
+        added = true;
+      }
+    });
+    if (added) showToast("Recurring transactions have been updated!");
+    // eslint-disable-next-line
+  }, [recurringTransactions]);
+
+  // ========== Week Helper ==========
+  function getWeek(dt) {
+    let onejan = new Date(dt.getFullYear(), 0, 1);
+    return Math.ceil(((dt - onejan) / 86400000 + onejan.getDay() + 1) / 7);
+  }
+
+  // ========== Budget Modal Logic ==========
+  function handleBudgetSave() {
+    setBudgets((b) => ({ ...b, ...newBudget }));
+    setBudgetModal(false);
+    showToast("Budgets updated!");
+  }
+
+  // ========== Date Range Picker ==========
+  const showDatepicker = (field) =>
+    setShowDatePicker({ show: true, field });
+
+  // ========== Render Transaction ==========
+  const renderItem = useCallback(
+    ({ item, index }) => (
+      <Swipeable
+        renderRightActions={() => (
+          <TouchableOpacity
+            style={theme.deleteBtn}
+            onPress={() => handleDeleteTransaction(item)}
+          >
+            <Feather name="trash-2" size={24} color="#fff" />
+          </TouchableOpacity>
+        )}
+      >
+        <Animated.View style={[theme.txnCard, { shadowOpacity: 0.2 }]}>
+          <TouchableOpacity onPress={() => handleEditTransaction(item)} activeOpacity={0.8}>
+            <LinearGradient
+              colors={["#8ec5fc", "#e0c3fc"]}
+              style={theme.txnCardGradient}
+              start={[0, 0]}
+              end={[1, 1]}
+            >
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={theme.txnCategory}><Ionicons name="pricetag" size={14} /> {item.category}</Text>
+                <Text style={theme.txnAmount}>
+                  {formatCurrency(item.amount, item.currency)}
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", marginTop: 6, alignItems: 'center' }}>
+                <Text style={theme.txnDate}>
+                  <Ionicons name="calendar" size={12} />{" "}
+                  {new Date(item.date).toLocaleDateString()}
+                </Text>
+                <Text style={theme.txnNote} numberOfLines={1} ellipsizeMode="tail">
+                  {item.note ? ` | ${item.note}` : ""}
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", marginTop: 4 }}>
+                <Text style={theme.txnSmall}>{item.paymentMode || "Cash"}</Text>
+                {item.recur && <Text style={theme.txnRecurTag}>⟳ {item.recur}</Text>}
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
+      </Swipeable>
+    ),
+    [theme]
+  );
+
+  // ========== TOTAL ==========
+  const totalSpent = useMemo(
+    () => filteredTransactions.reduce((acc, curr) => acc + curr.amount, 0),
+    [filteredTransactions]
+  );
+
+  // ========== Render ==========
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFF9FC" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.appTitle}>💰 Money+</Text>
-        <View style={styles.monthSelector}>
-          <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}>
-            <Ionicons name="chevron-back" size={20} color="#FF9BB3" />
-          </TouchableOpacity>
-          <Text style={styles.monthText}>{getMonthName(currentMonth).slice(0, 3)} {currentYear}</Text>
-          <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}>
-            <Ionicons name="chevron-forward" size={20} color="#FF9BB3" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <ScrollView style={styles.main} showsVerticalScrollIndicator={false}>
-        {/* Home Tab */}
-        {activeTab === 'home' && (
-          <>
-            {/* Balance Card */}
-            <View style={styles.balanceCard}>
-              <Text style={styles.balanceLabel}>Total Balance</Text>
-              <Text style={styles.balanceAmount}>{formatCurrency(balance)}</Text>
-              <View style={styles.balanceRow}>
-                <View style={styles.incomeBox}>
-                  <Ionicons name="trending-up" size={18} color="#4CAF50" />
-                  <View>
-                    <Text style={styles.miniLabel}>Income</Text>
-                    <Text style={styles.incomeAmount}>{formatCurrency(totalIncome)}</Text>
-                  </View>
-                </View>
-                <View style={styles.expenseBox}>
-                  <Ionicons name="trending-down" size={18} color="#FF6B8A" />
-                  <View>
-                    <Text style={styles.miniLabel}>Expense</Text>
-                    <Text style={styles.expenseAmount}>{formatCurrency(totalExpense)}</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            {/* SMS Sync Button */}
-            <TouchableOpacity 
-              style={styles.syncButton} 
-              onPress={readSMSMessages}
-              disabled={smsLoading}
-            >
-              {smsLoading ? (
-                <ActivityIndicator color="#FF9BB3" size="small" />
-              ) : (
-                <Ionicons name="sync" size={20} color="#FF9BB3" />
-              )}
-              <Text style={styles.syncButtonText}>
-                {smsLoading ? 'Scanning SMS...' : 'Sync Bank SMS'}
-              </Text>
-              {lastSyncDate && (
-                <Text style={styles.syncDate}>
-                  Last: {new Date(lastSyncDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            {/* Budget Progress */}
-            <View style={styles.budgetSection}>
-              <View style={styles.budgetHeader}>
-                <Text style={styles.budgetTitle}>Monthly Budget</Text>
-                <Text style={styles.budgetValue}>{formatCurrency(totalExpense)} / {formatCurrency(budget)}</Text>
-              </View>
-              <View style={styles.budgetTrack}>
-                <View style={[
-                  styles.budgetFill, 
-                  { 
-                    width: `${Math.min((totalExpense / budget) * 100, 100)}%`,
-                    backgroundColor: totalExpense > budget ? '#FF6B6B' : totalExpense > budget * 0.8 ? '#FFB347' : '#4CAF50'
-                  }
-                ]} />
-              </View>
-            </View>
-
-            {/* Transactions */}
-            <Text style={styles.sectionTitle}>Transactions</Text>
-            {monthTransactions.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyEmoji}>📝</Text>
-                <Text style={styles.emptyText}>No transactions yet!</Text>
-                <Text style={styles.emptySubtext}>Tap + or sync SMS to add</Text>
-              </View>
-            ) : (
-              groupByDate(monthTransactions).map((group) => (
-                <View key={group.date} style={styles.dateGroup}>
-                  <View style={styles.dateHeader}>
-                    <Text style={styles.dateHeaderText}>{formatDateHeader(group.date)}</Text>
-                    <Text style={styles.dateHeaderAmount}>
-                      {group.totalExpense > 0 && <Text style={{ color: '#FF6B8A' }}>-{formatCurrency(group.totalExpense)}</Text>}
-                    </Text>
-                  </View>
-                  {group.transactions.map(t => {
-                    const cat = categories.find(c => c.id === t.category) || categories[0];
-                    const iconData = iconLibrary[cat.icon] || iconLibrary.other;
-                    const payMode = paymentModes.find(p => p.id === t.paymentMode) || paymentModes[0];
-                    return (
-                      <TouchableOpacity key={t.id} style={styles.transactionItem} onLongPress={() => deleteTransaction(t.id)}>
-                        <View style={[styles.transactionIcon, { backgroundColor: iconData.bg }]}>
-                          <Text style={{ fontSize: 22 }}>{iconData.emoji}</Text>
-                        </View>
-                        <View style={styles.transactionInfo}>
-                          <Text style={styles.transactionCategory}>{cat.name}</Text>
-                          {t.note && t.note !== cat.name && (
-                            <Text style={styles.transactionNote} numberOfLines={1}>{t.note}</Text>
-                          )}
-                          <View style={styles.transactionMeta}>
-                            <View style={[styles.paymentBadge, { backgroundColor: payMode.bg }]}>
-                              <Text style={[styles.paymentBadgeText, { color: payMode.color }]}>
-                                {payMode.emoji} {payMode.name.split(' ')[0]}
-                              </Text>
-                            </View>
-                            {t.source === 'sms' && (
-                              <View style={styles.smsBadge}>
-                                <Text style={styles.smsBadgeText}>📱 Auto</Text>
-                              </View>
-                            )}
-                          </View>
-                        </View>
-                        <View style={styles.transactionRight}>
-                          <Text style={[styles.transactionAmount, { color: t.type === 'income' ? '#4CAF50' : '#FF6B8A' }]}>
-                            {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                          </Text>
-                          <TouchableOpacity 
-                            style={styles.editBtn}
-                            onPress={() => editTransaction(t)}
-                          >
-                            <Ionicons name="create-outline" size={18} color="#9B6BFF" />
-                          </TouchableOpacity>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              ))
-            )}
-          </>
-        )}
-
-        {/* Charts Tab */}
-        {activeTab === 'charts' && !detailView && (
-          <>
-            {/* Chart View Toggle */}
-            <View style={styles.chartToggle}>
-              <TouchableOpacity 
-                style={[styles.toggleBtn, chartView === 'category' && styles.toggleBtnActive]}
-                onPress={() => setChartView('category')}
-              >
-                <Text style={[styles.toggleText, chartView === 'category' && styles.toggleTextActive]}>
-                  🏷️ By Category
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.toggleBtn, chartView === 'payment' && styles.toggleBtnActive]}
-                onPress={() => setChartView('payment')}
-              >
-                <Text style={[styles.toggleText, chartView === 'payment' && styles.toggleTextActive]}>
-                  💳 By Payment
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Category View */}
-            {chartView === 'category' && categoryStats.length > 0 ? (
-              <>
-                <DonutChart data={categoryStats} total={totalExpense} />
-                {categoryStats.map((cat, index) => {
-                  const iconData = iconLibrary[cat.icon] || iconLibrary.other;
-                  const percentage = totalExpense > 0 ? ((cat.total / totalExpense) * 100).toFixed(0) : 0;
-                  return (
-                    <TouchableOpacity 
-                      key={cat.id} 
-                      style={styles.statsItem}
-                      onPress={() => setDetailView({ type: 'category', id: cat.id, name: cat.name })}
-                    >
-                      <View style={[styles.statsIcon, { backgroundColor: iconData.bg }]}>
-                        <Text style={{ fontSize: 20 }}>{iconData.emoji}</Text>
-                      </View>
-                      <View style={styles.statsInfo}>
-                        <Text style={styles.statsName}>{cat.name}</Text>
-                        <View style={styles.statsBar}>
-                          <View style={[styles.statsBarFill, { width: `${percentage}%`, backgroundColor: colors[index % colors.length] }]} />
-                        </View>
-                      </View>
-                      <View style={styles.statsRight}>
-                        <Text style={[styles.statsPercent, { color: colors[index % colors.length] }]}>{percentage}%</Text>
-                        <Text style={styles.statsAmount}>{formatCurrency(cat.total)}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </>
-            ) : chartView === 'category' && categoryStats.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyEmoji}>📊</Text>
-                <Text style={styles.emptyText}>No expense data</Text>
-              </View>
-            ) : null}
-
-            {/* Payment View */}
-            {chartView === 'payment' && paymentStats.length > 0 ? (
-              <>
-                <DonutChart data={paymentStats} total={totalExpense} />
-                {paymentStats.map((payment, index) => {
-                  const percentage = totalExpense > 0 ? ((payment.total / totalExpense) * 100).toFixed(0) : 0;
-                  return (
-                    <TouchableOpacity 
-                      key={payment.id} 
-                      style={styles.statsItem}
-                      onPress={() => setDetailView({ type: 'payment', id: payment.id, name: payment.name })}
-                    >
-                      <View style={[styles.statsIcon, { backgroundColor: payment.bg }]}>
-                        <Text style={{ fontSize: 20 }}>{payment.emoji}</Text>
-                      </View>
-                      <View style={styles.statsInfo}>
-                        <Text style={styles.statsName}>{payment.name}</Text>
-                        <View style={styles.statsBar}>
-                          <View style={[styles.statsBarFill, { width: `${percentage}%`, backgroundColor: colors[index % colors.length] }]} />
-                        </View>
-                      </View>
-                      <View style={styles.statsRight}>
-                        <Text style={[styles.statsPercent, { color: colors[index % colors.length] }]}>{percentage}%</Text>
-                        <Text style={styles.statsAmount}>{formatCurrency(payment.total)}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </>
-            ) : chartView === 'payment' && paymentStats.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyEmoji}>📊</Text>
-                <Text style={styles.emptyText}>No expense data</Text>
-              </View>
-            ) : null}
-          </>
-        )}
-
-        {/* Detail View */}
-        {detailView && (
-          <View style={styles.detailViewContainer}>
-            <View style={styles.detailHeader}>
-              <TouchableOpacity onPress={() => setDetailView(null)}>
-                <Ionicons name="arrow-back" size={24} color="#5A5A7A" />
-              </TouchableOpacity>
-              <Text style={styles.detailTitle}>{detailView.name}</Text>
-            </View>
-            
-            <ScrollView>
-              {monthTransactions
-                .filter(t => 
-                  detailView.type === 'category' 
-                    ? t.category === detailView.id
-                    : t.paymentMode === detailView.id
-                )
-                .map(t => {
-                  const cat = categories.find(c => c.id === t.category);
-                  const iconData = iconLibrary[cat?.icon] || iconLibrary.other;
-                  return (
-                    <View key={t.id} style={styles.transactionItem}>
-                      <View style={[styles.transactionIcon, { backgroundColor: iconData.bg }]}>
-                        <Text style={{ fontSize: 22 }}>{iconData.emoji}</Text>
-                      </View>
-                      <View style={styles.transactionInfo}>
-                        <Text style={styles.transactionCategory}>{cat?.name}</Text>
-                        {t.note && <Text style={styles.transactionNote}>{t.note}</Text>}
-                        <Text style={styles.transactionDate}>{t.date}</Text>
-                      </View>
-                      <Text style={styles.transactionAmount}>
-                        {formatCurrency(t.amount)}
-                      </Text>
-                    </View>
-                  );
-                })}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Settings Tab */}
-        {activeTab === 'settings' && (
-          <>
-            {/* SMS Sync Section */}
-            <View style={styles.settingsSection}>
-              <Text style={styles.settingsSectionTitle}>📱 SMS Auto-Sync</Text>
-              <TouchableOpacity style={styles.settingsItem} onPress={readSMSMessages}>
-                <Ionicons name="sync-circle" size={24} color="#FF9BB3" />
-                <View style={styles.settingsItemInfo}>
-                  <Text style={styles.settingsItemTitle}>Sync Bank SMS</Text>
-                  <Text style={styles.settingsItemDesc}>Import transactions from bank messages</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#ccc" />
-              </TouchableOpacity>
-              
-              <View style={styles.settingsItem}>
-                <Ionicons name="time" size={24} color="#9B6BFF" />
-                <View style={styles.settingsItemInfo}>
-                  <Text style={styles.settingsItemTitle}>Last Synced</Text>
-                  <Text style={styles.settingsItemDesc}>
-                    {lastSyncDate 
-                      ? new Date(lastSyncDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-                      : 'Never synced'
-                    }
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Card Mapping Section */}
-            <View style={styles.settingsSection}>
-              <Text style={styles.settingsSectionTitle}>💳 Card Mapping</Text>
-              <TouchableOpacity 
-                style={styles.settingsItem} 
-                onPress={() => setShowCardMapping(true)}
-              >
-                <Ionicons name="card" size={24} color="#6BAFFF" />
-                <View style={styles.settingsItemInfo}>
-                  <Text style={styles.settingsItemTitle}>Map Card Numbers</Text>
-                  <Text style={styles.settingsItemDesc}>
-                    {Object.keys(cardMappings).length} cards mapped
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color="#ccc" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Budget Section */}
-            <View style={styles.settingsSection}>
-              <Text style={styles.settingsSectionTitle}>🎯 Budget</Text>
-              <View style={styles.budgetSetting}>
-                <Text style={styles.settingLabel}>Monthly Budget</Text>
-                <View style={styles.budgetInputRow}>
-                  <Text style={styles.rupeeSign}>₹</Text>
-                  <TextInput
-                    style={styles.budgetInput}
-                    value={budget.toString()}
-                    onChangeText={(text) => setBudget(parseFloat(text) || 0)}
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
-            </View>
-
-            {/* Categories Section */}
-            <View style={styles.settingsSection}>
-              <View style={styles.catHeader}>
-                <Text style={styles.settingsSectionTitle}>📁 Categories</Text>
-                <TouchableOpacity style={styles.addCatBtn} onPress={() => setShowCategoryModal(true)}>
-                  <Ionicons name="add" size={20} color="#FF9BB3" />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.catGrid}>
-                {categories.filter(c => c.type === 'expense').slice(0, 8).map(cat => {
-                  const iconData = iconLibrary[cat.icon] || iconLibrary.other;
-                  return (
-                    <View key={cat.id} style={styles.catItem}>
-                      <View style={[styles.catIcon, { backgroundColor: iconData.bg }]}>
-                        <Text style={{ fontSize: 24 }}>{iconData.emoji}</Text>
-                      </View>
-                      <Text style={styles.catName} numberOfLines={1}>{cat.name}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Supported Banks */}
-            <View style={styles.settingsSection}>
-              <Text style={styles.settingsSectionTitle}>🏦 Supported Banks</Text>
-              <Text style={styles.supportedBanks}>
-                HDFC • ICICI • SBI • Axis • Kotak • IDFC • Yes Bank • PNB • BOB • Google Pay • PhonePe • Paytm • Amazon Pay • CRED
-              </Text>
-            </View>
-          </>
-        )}
-        
-        <View style={{ height: 100 }} />
-      </ScrollView>
-
-      {/* Add Button */}
-      <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddModal(true)}>
-        <Ionicons name="add" size={30} color="#fff" />
-      </TouchableOpacity>
-
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        {[
-          { id: 'home', icon: 'home', label: 'Home' },
-          { id: 'charts', icon: 'pie-chart', label: 'Charts' },
-          { id: 'settings', icon: 'settings', label: 'Settings' },
-        ].map(item => (
-          <TouchableOpacity key={item.id} style={styles.navItem} onPress={() => setActiveTab(item.id)}>
-            <Ionicons name={item.icon} size={24} color={activeTab === item.id ? '#FF9BB3' : '#B8B8D0'} />
-            <Text style={[styles.navLabel, { color: activeTab === item.id ? '#FF9BB3' : '#B8B8D0' }]}>{item.label}</Text>
-            {activeTab === item.id && <View style={styles.navDot} />}
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Add Transaction Modal */}
-      <Modal visible={showAddModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{editingTransaction ? 'Edit Transaction' : 'Add Transaction'}</Text>
-              <TouchableOpacity onPress={() => {
-                setShowAddModal(false);
-                setEditingTransaction(null);
-                setNewTransaction({
-                  amount: '',
-                  note: '',
-                  category: 'food',
-                  paymentMode: 'cash',
-                  date: new Date().toISOString().split('T')[0],
-                });
-              }}>
-                <Ionicons name="close" size={24} color="#B8B8D0" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Type Toggle */}
-              <View style={styles.typeToggle}>
-                <TouchableOpacity
-                  style={[styles.typeBtn, transactionType === 'expense' && styles.typeBtnActiveExpense]}
-                  onPress={() => { setTransactionType('expense'); setNewTransaction(prev => ({ ...prev, category: 'food' })); }}
-                >
-                  <Text style={[styles.typeBtnText, transactionType === 'expense' && styles.typeBtnTextActiveExpense]}>💸 Expense</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.typeBtn, transactionType === 'income' && styles.typeBtnActiveIncome]}
-                  onPress={() => { setTransactionType('income'); setNewTransaction(prev => ({ ...prev, category: 'salary' })); }}
-                >
-                  <Text style={[styles.typeBtnText, transactionType === 'income' && styles.typeBtnTextActiveIncome]}>💰 Income</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Amount */}
-              <View style={styles.amountSection}>
-                <Text style={styles.currencySign}>₹</Text>
-                <TextInput
-                  style={styles.amountInput}
-                  placeholder="0"
-                  placeholderTextColor="#B8B8D0"
-                  value={newTransaction.amount}
-                  onChangeText={(text) => setNewTransaction(prev => ({ ...prev, amount: text }))}
-                  keyboardType="numeric"
-                />
-              </View>
-
-              {/* Note Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Note (Optional)</Text>
-                <TextInput
-                  style={styles.noteInput}
-                  value={newTransaction.note}
-                  onChangeText={(text) => setNewTransaction(prev => ({ ...prev, note: text }))}
-                  placeholder="Enter note..."
-                  placeholderTextColor="#B8B8D0"
-                  multiline
-                />
-              </View>
-
-              {/* Date Picker */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Date</Text>
-                <View style={styles.datePickerRow}>
-                  <TouchableOpacity 
-                    style={styles.todayBtn}
-                    onPress={() => setNewTransaction(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }))}
-                  >
-                    <Text style={styles.todayBtnText}>TODAY</Text>
-                  </TouchableOpacity>
-                  <TextInput
-                    style={styles.dateInput}
-                    value={newTransaction.date}
-                    onChangeText={(text) => setNewTransaction(prev => ({ ...prev, date: text }))}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#B8B8D0"
-                  />
-                </View>
-              </View>
-
-              {/* Payment Mode */}
-              {transactionType === 'expense' && (
-                <>
-                  <Text style={styles.sectionLabel}>💳 Payment Mode</Text>
-                  <View style={styles.paymentGrid}>
-                    {paymentModes.map(mode => {
-                      const isSelected = newTransaction.paymentMode === mode.id;
-                      return (
-                        <TouchableOpacity
-                          key={mode.id}
-                          style={[styles.paymentOption, isSelected && { backgroundColor: mode.bg, borderColor: mode.color, borderWidth: 2 }]}
-                          onPress={() => setNewTransaction(prev => ({ ...prev, paymentMode: mode.id }))}
-                        >
-                          <Text style={{ fontSize: 20 }}>{mode.emoji}</Text>
-                          <Text style={[styles.paymentOptLabel, isSelected && { color: mode.color }]}>{mode.name}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </>
-              )}
-
-              {/* Category */}
-              <Text style={styles.sectionLabel}>📁 Category</Text>
-              <View style={styles.categoryGrid}>
-                {categories.filter(c => c.type === transactionType).map(cat => {
-                  const iconData = iconLibrary[cat.icon] || iconLibrary.other;
-                  const isSelected = newTransaction.category === cat.id;
-                  return (
-                    <TouchableOpacity
-                      key={cat.id}
-                      style={[styles.categoryOption, isSelected && { backgroundColor: iconData.bg, borderColor: '#FF9BB3', borderWidth: 2 }]}
-                      onPress={() => setNewTransaction(prev => ({ ...prev, category: cat.id }))}
-                    >
-                      <Text style={{ fontSize: 22 }}>{iconData.emoji}</Text>
-                      <Text style={[styles.categoryOptLabel, isSelected && { color: '#5A5A7A' }]} numberOfLines={1}>{cat.name}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <TouchableOpacity style={styles.saveBtn} onPress={addTransaction}>
-                <Ionicons name="checkmark" size={22} color="#fff" />
-                <Text style={styles.saveBtnText}>{editingTransaction ? 'Update Transaction' : 'Save Transaction'}</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Card Mapping Modal */}
-      <Modal visible={showCardMapping} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>💳 Card Mapping</Text>
-              <TouchableOpacity onPress={() => setShowCardMapping(false)}>
-                <Ionicons name="close" size={24} color="#5A5A7A" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 400 }}>
-              {/* Add New Card */}
-              <View style={styles.cardMappingForm}>
-                <Text style={styles.inputLabel}>Last 4 Digits</Text>
-                <TextInput
-                  style={styles.input}
-                  value={newCardLast4}
-                  onChangeText={setNewCardLast4}
-                  placeholder="1234"
-                  keyboardType="numeric"
-                  maxLength={4}
-                />
-                
-                <Text style={styles.inputLabel}>Card Type</Text>
-                <View style={styles.cardTypeRow}>
-                  {['credit', 'debit', 'upi'].map(type => (
-                    <TouchableOpacity
-                      key={type}
-                      style={[styles.cardTypeBtn, newCardType === type && styles.cardTypeBtnActive]}
-                      onPress={() => setNewCardType(type)}
-                    >
-                      <Text style={[styles.cardTypeText, newCardType === type && styles.cardTypeTextActive]}>
-                        {type.charAt(0).toUpperCase() + type.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                
-                <TouchableOpacity style={styles.addCardBtn} onPress={addCardMapping}>
-                  <Text style={styles.addCardBtnText}>Add Mapping</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Existing Mappings */}
-              <Text style={styles.sectionTitleInModal}>Saved Mappings</Text>
-              {Object.entries(cardMappings).map(([last4, type]) => (
-                <View key={last4} style={styles.cardMappingItem}>
-                  <Text style={styles.cardLast4}>••• {last4}</Text>
-                  <Text style={styles.cardType}>{type}</Text>
-                  <TouchableOpacity onPress={() => deleteCardMapping(last4)}>
-                    <Ionicons name="trash-outline" size={20} color="#FF6B8A" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* SMS Import Modal */}
-      <Modal visible={showSMSModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modal, { maxHeight: '85%' }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>📱 Import Transactions</Text>
-              <TouchableOpacity onPress={() => { setShowSMSModal(false); setSelectedSMS({}); }}>
-                <Ionicons name="close" size={24} color="#B8B8D0" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Select All */}
-            <TouchableOpacity style={styles.selectAllRow} onPress={selectAllSMS}>
-              <Ionicons 
-                name={parsedSMS.every(sms => selectedSMS[sms._id]) ? "checkbox" : "square-outline"} 
-                size={24} 
-                color="#FF9BB3" 
+    <LinearGradient
+      colors={
+        dark
+          ? ["#232526", "#414345"]
+          : ["#dbe6e4", "#fff1eb"]
+      }
+      style={theme.flex}
+      start={[0.2, 0.1]}
+      end={[1, 0.8]}
+    >
+      <SafeAreaView style={{ flex: 1 }}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View style={theme.header}>
+            <Text style={theme.heading}>
+              Expense Tracker&nbsp;
+            </Text>
+            <TouchableOpacity onPress={() => setDark((d) => !d)}>
+              <Feather
+                name={dark ? "sun" : "moon"}
+                size={24}
+                color={theme.text.color}
               />
-              <Text style={styles.selectAllText}>
-                Select All ({Object.keys(selectedSMS).filter(k => selectedSMS[k]).length}/{parsedSMS.length})
-              </Text>
-            </TouchableOpacity>
-
-            <ScrollView style={styles.smsListContainer}>
-              {parsedSMS.map(sms => {
-                const cat = categories.find(c => c.id === sms.parsed.category) || categories.find(c => c.id === 'other');
-                const iconData = iconLibrary[cat?.icon] || iconLibrary.other;
-                const payMode = paymentModes.find(p => p.id === sms.parsed.paymentMode) || paymentModes[0];
-                const isSelected = selectedSMS[sms._id];
-                
-                return (
-                  <TouchableOpacity 
-                    key={sms._id} 
-                    style={[styles.smsItem, isSelected && styles.smsItemSelected]}
-                    onPress={() => toggleSMSSelection(sms._id)}
-                  >
-                    <Ionicons 
-                      name={isSelected ? "checkbox" : "square-outline"} 
-                      size={22} 
-                      color={isSelected ? "#FF9BB3" : "#ccc"} 
-                    />
-                    <View style={[styles.smsIcon, { backgroundColor: iconData.bg }]}>
-                      <Text style={{ fontSize: 18 }}>{iconData.emoji}</Text>
-                    </View>
-                    <View style={styles.smsInfo}>
-                      <Text style={styles.smsMerchant} numberOfLines={1}>
-                        {sms.parsed.merchant || cat?.name || 'Transaction'}
-                      </Text>
-                      <View style={styles.smsMetaRow}>
-                        <Text style={[styles.smsType, { color: sms.parsed.type === 'income' ? '#4CAF50' : '#FF6B8A' }]}>
-                          {sms.parsed.type === 'income' ? '↓ Income' : '↑ Expense'}
-                        </Text>
-                        <Text style={styles.smsDate}>{sms.parsed.date}</Text>
-                      </View>
-                      <View style={[styles.paymentBadge, { backgroundColor: payMode.bg, alignSelf: 'flex-start', marginTop: 4 }]}>
-                        <Text style={[styles.paymentBadgeText, { color: payMode.color }]}>
-                          {payMode.emoji} {payMode.name}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={[styles.smsAmount, { color: sms.parsed.type === 'income' ? '#4CAF50' : '#FF6B8A' }]}>
-                      {sms.parsed.type === 'income' ? '+' : '-'}{formatCurrency(sms.parsed.amount)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            <TouchableOpacity 
-              style={[styles.saveBtn, { margin: 16 }]} 
-              onPress={importSelectedSMS}
-            >
-              <Ionicons name="download" size={22} color="#fff" />
-              <Text style={styles.saveBtnText}>
-                Import {Object.keys(selectedSMS).filter(k => selectedSMS[k]).length} Transactions
-              </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
 
-      {/* Add Category Modal */}
-      <Modal visible={showCategoryModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Category</Text>
-              <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
-                <Ionicons name="close" size={24} color="#B8B8D0" />
+          {/* ------ Search, Filter, Add, Export/SMS ------ */}
+          <View style={theme.row}>
+            <View style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
+              <Feather name="search" size={18} color={theme.text.color} />
+              <TextInput
+                placeholder="Search note/category"
+                style={theme.inputMinimal}
+                placeholderTextColor={theme.input.color}
+                value={search}
+                onChangeText={setSearch}
+              />
+            </View>
+            <TouchableOpacity onPress={() => setModalVisible(true)} style={theme.iconBtn}>
+              <Feather name="plus" size={22} color={theme.text.color} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleExportCSV} style={theme.iconBtn}>
+              <Feather name="download" size={22} color={theme.text.color} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleImportSMS} style={theme.iconBtn}>
+              <MaterialCommunityIcons name="message-processing-outline" size={20} color={theme.text.color} />
+            </TouchableOpacity>
+          </View>
+          {/* FILTERS */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={theme.filterRow}>
+              <Picker
+                selectedValue={filters.category}
+                style={theme.filterPicker}
+                dropdownIconColor={theme.text.color}
+                onValueChange={(v) => setFilters((f) => ({ ...f, category: v }))}
+              >
+                <Picker.Item label="Category" value="" />
+                {CATEGORIES.map((c) => (
+                  <Picker.Item key={c} label={c} value={c} />
+                ))}
+              </Picker>
+              <Picker
+                selectedValue={filters.paymentMode}
+                style={theme.filterPicker}
+                dropdownIconColor={theme.text.color}
+                onValueChange={(v) => setFilters((f) => ({ ...f, paymentMode: v }))}
+              >
+                <Picker.Item label="Mode" value="" />
+                {PAYMENT_MODES.map((m) => (
+                  <Picker.Item key={m} label={m} value={m} />
+                ))}
+              </Picker>
+              <Picker
+                selectedValue={filters.currency}
+                style={theme.filterPicker}
+                dropdownIconColor={theme.text.color}
+                onValueChange={(v) => setFilters((f) => ({ ...f, currency: v }))}
+              >
+                {CURRENCIES.map((c) => (
+                  <Picker.Item key={c.code} label={c.code} value={c.code} />
+                ))}
+              </Picker>
+              {/* Date range */}
+              <TouchableOpacity
+                onPress={() => showDatepicker("from")}
+                style={theme.dateBtn}
+              >
+                <Feather name="calendar" size={14} color={theme.text.color} />
+                <Text style={theme.dateBtnText}>
+                  {filters.from
+                    ? new Date(filters.from).toLocaleDateString()
+                    : "From"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => showDatepicker("to")}
+                style={theme.dateBtn}
+              >
+                <Feather name="calendar" size={14} color={theme.text.color} />
+                <Text style={theme.dateBtnText}>
+                  {filters.to
+                    ? new Date(filters.to).toLocaleDateString()
+                    : "To"}
+                </Text>
               </TouchableOpacity>
             </View>
+          </ScrollView>
+          {/* Date picker */}
+          {showDatePicker.show && (
+            <DateTimePicker
+              value={filters[showDatePicker.field] || new Date()}
+              mode="date"
+              maximumDate={new Date()}
+              onChange={(_e, date) => {
+                setShowDatePicker({ show: false, field: null });
+                if (date)
+                  setFilters((f) => ({
+                    ...f,
+                    [showDatePicker.field]: date,
+                  }));
+              }}
+            />
+          )}
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={styles.iconPreview}>
-                <View style={[styles.previewIcon, { backgroundColor: (iconLibrary[newCategory.icon] || iconLibrary.other).bg }]}>
-                  <Text style={{ fontSize: 32 }}>{(iconLibrary[newCategory.icon] || iconLibrary.other).emoji}</Text>
+          {/* Budget tracker bar */}
+          <TouchableOpacity onPress={() => setBudgetModal(true)}>
+            <ScrollView horizontal>
+              <View style={theme.budgetsBar}>
+                {CATEGORIES.map((cat, idx) => {
+                  const spent = spentByCategory(cat);
+                  const percent = (spent * 100) / (budgets[cat] || 1);
+                  return (
+                    <View key={cat} style={theme.budgetBox}>
+                      <Text style={theme.budgetCat}>{cat}</Text>
+                      <View style={theme.budgetTrack}>
+                        <View
+                          style={[
+                            theme.budgetFill,
+                            {
+                              width: Math.min(100, percent),
+                              backgroundColor: pieColors[idx % pieColors.length],
+                            },
+                          ]}
+                        />
+                        <Text style={theme.budgetSpent}>
+                          {formatCurrency(spent, filters.currency)}/
+                          {formatCurrency(budgets[cat] || 0, filters.currency)}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </TouchableOpacity>
+
+          {/* Pie chart */}
+          {pieChartData.length > 0 && (
+            <ScrollView horizontal style={{ marginHorizontal: 8 }}>
+              <PieChart
+                style={{ alignSelf: "center" }}
+                data={pieChartData.map((d) => ({
+                  name: d.name,
+                  population: d.amount,
+                  color: d.color,
+                  legendFontColor: d.legendFontColor,
+                  legendFontSize: d.legendFontSize,
+                }))}
+                width={Dimensions.get("window").width * 0.93}
+                height={150}
+                chartConfig={{
+                  backgroundGradientFrom: "#fff",
+                  backgroundGradientTo: "#fff",
+                  color: (opacity = 1) => `rgba(70,70,70,${opacity})`,
+                  propsForLabels: {
+                    fontSize: 12,
+                    fontWeight: "bold",
+                  },
+                }}
+                accessor="population"
+                backgroundColor="transparent"
+                paddingLeft="18"
+                absolute
+              />
+            </ScrollView>
+          )}
+
+          {/* Total */}
+          <View style={theme.totalBar}>
+            <Text style={theme.totalText}>
+              Total Spent: {formatCurrency(totalSpent, filters.currency)}
+            </Text>
+          </View>
+
+          {/* Transaction List */}
+          <Animated.FlatList
+            data={filteredTransactions}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={renderItem}
+            style={{ flex: 1 }}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            contentContainerStyle={{ paddingBottom: 30 }}
+            ListEmptyComponent={
+              <View style={theme.emptyBox}>
+                <Text style={theme.emptyText}>
+                  No transactions found.
+                </Text>
+              </View>
+            }
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+              { useNativeDriver: false }
+            )}
+            initialNumToRender={10}
+            removeClippedSubviews
+            maxToRenderPerBatch={20}
+            windowSize={11}
+          />
+
+          {/* -------- Transaction Add/Edit Modal -------- */}
+          <Modal
+            visible={modalVisible}
+            animationType="slide"
+            transparent
+            onRequestClose={() => setModalVisible(false)}
+          >
+            <View style={theme.modalOverlay}>
+              <View style={theme.modalBox}>
+                <Text style={theme.modaltitle}>
+                  {editing ? "Edit" : "Add"} Transaction
+                </Text>
+                {/* Inline form */}
+                <View style={theme.row}>
+                  <TextInput
+                    placeholder="Amount"
+                    style={theme.input}
+                    keyboardType="multiline"
+                    value={form.amount ? String(form.amount) : ""}
+                    onChangeText={(txt) => setForm((f) => ({ ...f, amount: txt.replace(/[^0-9.]/g, "") }))}
+                    placeholderTextColor={theme.input.color}
+                  />
+                  <Picker
+                    selectedValue={form.currency}
+                    style={theme.inputPicker}
+                    dropdownIconColor={theme.text.color}
+                    onValueChange={(v) => setForm((f) => ({ ...f, currency: v }))}
+                  >
+                    {CURRENCIES.map((c) => (
+                      <Picker.Item key={c.code} label={c.code} value={c.code} />
+                    ))}
+                  </Picker>
+                </View>
+                {errors.amount && <Text style={theme.errText}>{errors.amount}</Text>}
+
+                <Picker
+                  selectedValue={form.category}
+                  style={theme.inputPicker}
+                  dropdownIconColor={theme.text.color}
+                  onValueChange={(v) => setForm((f) => ({ ...f, category: v }))}
+                >
+                  {CATEGORIES.map((c) => (
+                    <Picker.Item key={c} label={c} value={c} />
+                  ))}
+                </Picker>
+                {errors.category && <Text style={theme.errText}>{errors.category}</Text>}
+
+                <Picker
+                  selectedValue={form.paymentMode}
+                  style={theme.inputPicker}
+                  dropdownIconColor={theme.text.color}
+                  onValueChange={(v) => setForm((f) => ({ ...f, paymentMode: v }))}
+                >
+                  {PAYMENT_MODES.map((c) => (
+                    <Picker.Item key={c} label={c} value={c} />
+                  ))}
+                </Picker>
+                {errors.paymentMode && <Text style={theme.errText}>{errors.paymentMode}</Text>}
+
+                <View style={theme.inlineRow}>
+                  <TouchableOpacity
+                    style={theme.dateBtn}
+                    onPress={() => setShowDatePicker({ show: true, field: "modalDate" })}
+                  >
+                    <Feather name="calendar" size={14} color={theme.text.color} />
+                    <Text style={theme.dateBtnText}>
+                      {form.date
+                        ? new Date(form.date).toLocaleDateString()
+                        : "Pick date"}
+                    </Text>
+                  </TouchableOpacity>
+                  <Picker
+                    selectedValue={form.recur}
+                    style={[theme.inputPicker, { flex: 1 }]}
+                    dropdownIconColor={theme.text.color}
+                    onValueChange={(v) =>
+                      setForm((f) => ({ ...f, recur: v }))
+                    }
+                  >
+                    {RECUR_OPTIONS.map((o) => (
+                      <Picker.Item key={o.value} label={o.label} value={o.value} />
+                    ))}
+                  </Picker>
                 </View>
                 <TextInput
-                  style={styles.categoryNameInput}
-                  placeholder="Category name"
-                  placeholderTextColor="#B8B8D0"
-                  value={newCategory.name}
-                  onChangeText={(text) => setNewCategory(prev => ({ ...prev, name: text }))}
+                  placeholder="Note (optional)"
+                  style={[theme.input, { height: 36 }]}
+                  value={form.note}
+                  onChangeText={(txt) => setForm((f) => ({ ...f, note: txt }))}
+                  placeholderTextColor={theme.input.color}
                 />
-              </View>
-
-              <View style={styles.typeToggle}>
-                <TouchableOpacity
-                  style={[styles.typeBtn, newCategory.type === 'expense' && styles.typeBtnActiveExpense]}
-                  onPress={() => setNewCategory(prev => ({ ...prev, type: 'expense' }))}
-                >
-                  <Text style={[styles.typeBtnText, newCategory.type === 'expense' && styles.typeBtnTextActiveExpense]}>💸 Expense</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.typeBtn, newCategory.type === 'income' && styles.typeBtnActiveIncome]}
-                  onPress={() => setNewCategory(prev => ({ ...prev, type: 'income' }))}
-                >
-                  <Text style={[styles.typeBtnText, newCategory.type === 'income' && styles.typeBtnTextActiveIncome]}>💰 Income</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.iconGridTitle}>Choose Icon</Text>
-              <View style={styles.iconGrid}>
-                {Object.entries(iconLibrary).map(([key, data]) => (
+                {/* recurring */}
+                {showDatePicker.show &&
+                  showDatePicker.field === "modalDate" && (
+                    <DateTimePicker
+                      value={new Date(form.date)}
+                      mode="date"
+                      maximumDate={new Date()}
+                      onChange={(_e, date) => {
+                        setShowDatePicker({ show: false, field: null });
+                        if (date)
+                          setForm((f) => ({ ...f, date }));
+                      }}
+                    />
+                  )}
+                <View style={theme.modalBtns}>
                   <TouchableOpacity
-                    key={key}
-                    style={[styles.iconOption, newCategory.icon === key && styles.iconOptionSelected, { backgroundColor: data.bg }]}
-                    onPress={() => setNewCategory(prev => ({ ...prev, icon: key }))}
+                    style={theme.cancelBtn}
+                    onPress={() => {
+                      setModalVisible(false);
+                      setEditing(null);
+                      setErrors({});
+                    }}
                   >
-                    <Text style={{ fontSize: 22 }}>{data.emoji}</Text>
+                    <Text style={theme.cancelBtnText}>Cancel</Text>
                   </TouchableOpacity>
-                ))}
+                  <TouchableOpacity
+                    style={theme.saveBtn}
+                    onPress={handleSaveTransaction}
+                  >
+                    <Text style={theme.saveBtnText}>
+                      {editing ? "Save" : "Add"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
+            </View>
+          </Modal>
 
-              <TouchableOpacity style={styles.saveBtn} onPress={addCategory}>
-                <Ionicons name="checkmark" size={22} color="#fff" />
-                <Text style={styles.saveBtnText}>Create Category</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+          {/* --------- Budget Modal --------- */}
+          <Modal
+            visible={budgetModal}
+            animationType="fade"
+            transparent
+            onRequestClose={() => setBudgetModal(false)}
+          >
+            <View style={theme.modalOverlay}>
+              <View style={theme.budgetModalBox}>
+                <Text style={theme.modaltitle}>Set Budgets Per Category</Text>
+                <ScrollView>
+                  {CATEGORIES.map((cat) => (
+                    <View
+                      key={cat}
+                      style={{ flexDirection: "row", alignItems: "center", marginVertical: 4 }}
+                    >
+                      <Text style={[theme.txnCategory, { flex: 1 }]}>{cat}</Text>
+                      <TextInput
+                        keyboardType="numeric"
+                        style={[theme.input, { flex: 1, marginVertical: 2, height: 30 }]}
+                        value={
+                          newBudget[cat] !== undefined
+                            ? String(newBudget[cat])
+                            : String(budgets[cat] || 0)
+                        }
+                        onChangeText={(txt) =>
+                          setNewBudget((b) => ({
+                            ...b,
+                            [cat]: parseInt(txt.replace(/[^0-9]/g, "") || "0", 10),
+                          }))
+                        }
+                        placeholder={`Set budget`}
+                        placeholderTextColor={theme.input.color}
+                      />
+                    </View>
+                  ))}
+                  <View style={theme.modalBtns}>
+                    <TouchableOpacity
+                      style={theme.cancelBtn}
+                      onPress={() => setBudgetModal(false)}
+                    >
+                      <Text style={theme.cancelBtnText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={theme.saveBtn}
+                      onPress={handleBudgetSave}
+                    >
+                      <Text style={theme.saveBtnText}>Save</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFF9FC' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF9FC' },
-  loadingIcon: { fontSize: 48 },
-  loadingText: { marginTop: 16, color: '#B8B8D0', fontSize: 16 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
-  appTitle: { fontSize: 22, fontWeight: '800', color: '#FF9BB3' },
-  monthSelector: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, shadowColor: '#FF9BB3', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 3 },
-  monthBtn: { padding: 4 },
-  monthText: { fontSize: 13, fontWeight: '600', color: '#5A5A7A', marginHorizontal: 8 },
-  main: { flex: 1, paddingHorizontal: 16 },
-  balanceCard: { backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 12, shadowColor: '#FF9BB3', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 4 },
-  balanceLabel: { fontSize: 12, color: '#B8B8D0', marginBottom: 4 },
-  balanceAmount: { fontSize: 32, fontWeight: '800', color: '#5A5A7A', marginBottom: 16 },
-  balanceRow: { flexDirection: 'row', gap: 12 },
-  incomeBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#E8F5E9', padding: 12, borderRadius: 14 },
-  expenseBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFE5E5', padding: 12, borderRadius: 14 },
-  miniLabel: { fontSize: 10, color: '#888' },
-  incomeAmount: { fontSize: 14, fontWeight: '700', color: '#4CAF50' },
-  expenseAmount: { fontSize: 14, fontWeight: '700', color: '#FF6B8A' },
-  syncButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', padding: 14, borderRadius: 14, marginBottom: 12, gap: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, borderWidth: 1, borderColor: '#FFE5E5' },
-  syncButtonText: { fontSize: 14, fontWeight: '600', color: '#FF9BB3' },
-  syncDate: { fontSize: 11, color: '#B8B8D0', marginLeft: 8 },
-  budgetSection: { backgroundColor: '#fff', borderRadius: 16, padding: 14, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
-  budgetHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  budgetTitle: { fontSize: 12, fontWeight: '600', color: '#5A5A7A' },
-  budgetValue: { fontSize: 11, color: '#B8B8D0' },
-  budgetTrack: { height: 8, backgroundColor: '#F5F5F5', borderRadius: 8, overflow: 'hidden' },
-  budgetFill: { height: '100%', borderRadius: 8 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#5A5A7A', marginBottom: 12 },
-  dateGroup: { marginBottom: 16 },
-  dateHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', marginBottom: 8 },
-  dateHeaderText: { fontSize: 13, fontWeight: '700', color: '#FF9BB3' },
-  dateHeaderAmount: { fontSize: 12, fontWeight: '600' },
-  transactionItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 12, borderRadius: 14, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
-  transactionIcon: { width: 46, height: 46, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  transactionInfo: { flex: 1, marginLeft: 12 },
-  transactionCategory: { fontSize: 14, fontWeight: '600', color: '#5A5A7A', marginBottom: 2 },
-  transactionNote: { fontSize: 12, color: '#B8B8D0', marginBottom: 4 },
-  transactionMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  paymentBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  paymentBadgeText: { fontSize: 9, fontWeight: '600' },
-  smsBadge: { backgroundColor: '#E3F2FD', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  smsBadgeText: { fontSize: 8, color: '#2196F3', fontWeight: '600' },
-  transactionRight: { alignItems: 'flex-end' },
-  transactionAmount: { fontSize: 14, fontWeight: '700' },
-  transactionDate: { fontSize: 11, color: '#B8B8D0', marginTop: 2 },
-  editBtn: { marginTop: 4, padding: 4 },
-  emptyState: { alignItems: 'center', paddingVertical: 40 },
-  emptyEmoji: { fontSize: 48, marginBottom: 12 },
-  emptyText: { fontSize: 16, fontWeight: '600', color: '#5A5A7A' },
-  emptySubtext: { fontSize: 13, color: '#B8B8D0', marginTop: 4 },
-  chartCenter: { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -50 }, { translateY: -20 }], alignItems: 'center' },
-  chartLabel: { fontSize: 11, color: '#B8B8D0' },
-  chartAmount: { fontSize: 18, fontWeight: '800', color: '#5A5A7A' },
-  statsItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 12, borderRadius: 14, marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
-  statsIcon: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  statsInfo: { flex: 1, marginLeft: 12 },
-  statsName: { fontSize: 13, fontWeight: '600', color: '#5A5A7A', marginBottom: 6 },
-  statsBar: { height: 6, backgroundColor: '#F5F5F5', borderRadius: 6, overflow: 'hidden' },
-  statsBarFill: { height: '100%', borderRadius: 6 },
-  statsRight: { alignItems: 'flex-end', marginLeft: 12 },
-  statsPercent: { fontSize: 13, fontWeight: '700' },
-  statsAmount: { fontSize: 12, color: '#888', marginTop: 2 },
-  settingsSection: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
-  settingsSectionTitle: { fontSize: 15, fontWeight: '700', color: '#5A5A7A', marginBottom: 12 },
-  settingsItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
-  settingsItemInfo: { flex: 1, marginLeft: 12 },
-  settingsItemTitle: { fontSize: 14, fontWeight: '600', color: '#5A5A7A' },
-  settingsItemDesc: { fontSize: 12, color: '#B8B8D0', marginTop: 2 },
-  supportedBanks: { fontSize: 12, color: '#888', lineHeight: 20 },
-  catHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  addCatBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF0F5', justifyContent: 'center', alignItems: 'center' },
-  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  catItem: { width: (width - 32 - 64) / 4, alignItems: 'center' },
-  catIcon: { width: 48, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  catName: { fontSize: 10, fontWeight: '600', color: '#5A5A7A', textAlign: 'center', marginTop: 4 },
-  budgetSetting: { marginTop: 8 },
-  settingLabel: { fontSize: 13, fontWeight: '600', color: '#5A5A7A', marginBottom: 8 },
-  budgetInputRow: { flexDirection: 'row', alignItems: 'center' },
-  rupeeSign: { fontSize: 24, color: '#B8B8D0' },
-  budgetInput: { flex: 1, fontSize: 28, fontWeight: '700', color: '#5A5A7A', marginLeft: 8 },
-  addBtn: { position: 'absolute', bottom: 90, alignSelf: 'center', width: 56, height: 56, borderRadius: 28, backgroundColor: '#FF9BB3', justifyContent: 'center', alignItems: 'center', shadowColor: '#FF9BB3', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
-  bottomNav: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 10, paddingBottom: 25, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  navItem: { alignItems: 'center', paddingHorizontal: 20 },
-  navLabel: { fontSize: 10, fontWeight: '600', marginTop: 4 },
-  navDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#FF9BB3', marginTop: 4 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modal: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%', paddingBottom: 30 },
-  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%', paddingBottom: 30 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#5A5A7A' },
-  typeToggle: { flexDirection: 'row', gap: 10, padding: 14, paddingHorizontal: 20 },
-  typeBtn: { flex: 1, padding: 12, borderRadius: 12, backgroundColor: '#f5f5f5', alignItems: 'center' },
-  typeBtnActiveExpense: { backgroundColor: '#FFE5E5' },
-  typeBtnActiveIncome: { backgroundColor: '#E8F5E9' },
-  typeBtnText: { fontSize: 13, fontWeight: '700', color: '#999' },
-  typeBtnTextActiveExpense: { color: '#FF6B8A' },
-  typeBtnTextActiveIncome: { color: '#4CAF50' },
-  amountSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FAFAFA', marginHorizontal: 20, padding: 16, borderRadius: 16, marginBottom: 16 },
-  currencySign: { fontSize: 28, color: '#B8B8D0', fontWeight: '600' },
-  amountInput: { fontSize: 36, fontWeight: '800', color: '#5A5A7A', marginLeft: 8, minWidth: 120, textAlign: 'center' },
-  inputGroup: { marginHorizontal: 20, marginBottom: 16 },
-  inputLabel: { fontSize: 13, fontWeight: '600', color: '#5A5A7A', marginBottom: 8 },
-  noteInput: { backgroundColor: '#F8F8FA', borderRadius: 12, padding: 14, fontSize: 15, color: '#5A5A7A', minHeight: 60, textAlignVertical: 'top' },
-  datePickerRow: { flexDirection: 'row', gap: 10 },
-  todayBtn: { backgroundColor: '#FF9BB3', paddingHorizontal: 20, paddingVertical: 14, borderRadius: 12 },
-  todayBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  dateInput: { flex: 1, backgroundColor: '#F8F8FA', borderRadius: 12, padding: 14, fontSize: 15, color: '#5A5A7A' },
-  input: { backgroundColor: '#F8F8FA', borderRadius: 12, padding: 14, fontSize: 15, color: '#5A5A7A' },
-  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#888', marginLeft: 20, marginBottom: 10 },
-  sectionTitleInModal: { fontSize: 14, fontWeight: '700', color: '#5A5A7A', marginHorizontal: 20, marginTop: 16, marginBottom: 12 },
-  paymentGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, marginBottom: 16 },
-  paymentOption: { width: (width - 40 - 16) / 3, padding: 12, borderRadius: 12, backgroundColor: '#f9f9f9', alignItems: 'center' },
-  paymentOptLabel: { fontSize: 10, fontWeight: '600', color: '#888', textAlign: 'center', marginTop: 4 },
-  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, marginBottom: 20 },
-  categoryOption: { width: (width - 40 - 24) / 4, padding: 10, borderRadius: 12, backgroundColor: '#f9f9f9', alignItems: 'center' },
-  categoryOptLabel: { fontSize: 9, fontWeight: '600', color: '#B8B8D0', textAlign: 'center', marginTop: 4 },
-  saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF9BB3', marginHorizontal: 20, padding: 16, borderRadius: 14, gap: 8, shadowColor: '#FF9BB3', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
-  saveBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  selectAllRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f5f5f5', gap: 10 },
-  selectAllText: { fontSize: 14, fontWeight: '600', color: '#5A5A7A' },
-  smsListContainer: { maxHeight: 400 },
-  smsItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f5f5f5', gap: 10 },
-  smsItemSelected: { backgroundColor: '#FFF5F8' },
-  smsIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  smsInfo: { flex: 1 },
-  smsMerchant: { fontSize: 13, fontWeight: '600', color: '#5A5A7A' },
-  smsMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
-  smsType: { fontSize: 11, fontWeight: '600' },
-  smsDate: { fontSize: 11, color: '#B8B8D0' },
-  smsAmount: { fontSize: 14, fontWeight: '700' },
-  iconPreview: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FAFAFA', marginHorizontal: 20, padding: 14, borderRadius: 14, marginBottom: 16, marginTop: 10 },
-  previewIcon: { width: 56, height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  categoryNameInput: { flex: 1, fontSize: 16, fontWeight: '600', color: '#5A5A7A', marginLeft: 14 },
-  iconGridTitle: { fontSize: 12, fontWeight: '600', color: '#888', marginLeft: 20, marginBottom: 10 },
-  iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, marginBottom: 20 },
-  iconOption: { width: (width - 40 - 32) / 5, aspectRatio: 1, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  iconOptionSelected: { borderWidth: 3, borderColor: '#FF9BB3' },
-  chartToggle: { flexDirection: 'row', backgroundColor: '#F8F8FA', padding: 4, borderRadius: 12, marginBottom: 20 },
-  toggleBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  toggleBtnActive: { backgroundColor: '#FF9BB3', shadowColor: '#FF9BB3', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
-  toggleText: { fontSize: 13, fontWeight: '600', color: '#B8B8D0' },
-  toggleTextActive: { color: '#fff' },
-  cardMappingForm: { padding: 20, backgroundColor: '#F8F8FA', borderRadius: 12, marginBottom: 20 },
-  cardTypeRow: { flexDirection: 'row', gap: 10, marginTop: 8, marginBottom: 16 },
-  cardTypeBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#fff', alignItems: 'center', borderWidth: 2, borderColor: '#E8E8E8' },
-  cardTypeBtnActive: { backgroundColor: '#FF9BB3', borderColor: '#FF9BB3' },
-  cardTypeText: { fontSize: 13, fontWeight: '600', color: '#B8B8D0' },
-  cardTypeTextActive: { color: '#fff' },
-  addCardBtn: { backgroundColor: '#9B6BFF', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
-  addCardBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  cardMappingItem: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#fff', borderRadius: 12, marginBottom: 10 },
-  cardLast4: { flex: 1, fontSize: 16, fontWeight: '600', color: '#5A5A7A' },
-  cardType: { fontSize: 14, color: '#9B6BFF', marginRight: 12, textTransform: 'capitalize' },
-  detailViewContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#FFF9FC', zIndex: 1000 },
-  detailHeader: { flexDirection: 'row', alignItems: 'center', padding: 20, paddingTop: 60, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
-  detailTitle: { fontSize: 18, fontWeight: '700', color: '#5A5A7A', marginLeft: 16 },
+// ========== LIGHT THEME ==========
+const stylesLight = StyleSheet.create({
+  flex: { flex: 1 },
+  heading: {
+    fontSize: 25,
+    fontWeight: "700",
+    color: "#28313b",
+  },
+  text: { color: "#222" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 2,
+    backgroundColor: "transparent",
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 9,
+    marginVertical: 6,
+  },
+  inlineRow: { flexDirection: "row", alignItems: "center" },
+  iconBtn: {
+    marginLeft: 8,
+    backgroundColor: "#f4f4fa",
+    padding: 6,
+    borderRadius: 9,
+    elevation: 1,
+    shadowOpacity: 0.09,
+  },
+  filterRow: { flexDirection: "row", alignItems: "center" },
+  filterPicker: {
+    width: 108,
+    backgroundColor: "rgba(250,250,250,0.7)",
+    color: "#2e2e53",
+    borderRadius: 10,
+    height: 32,
+    marginRight: 5,
+  },
+  inputMinimal: {
+    flex: 1,
+    marginLeft: 3,
+    color: "#293248",
+    fontSize: 15,
+    padding: 4,
+    backgroundColor: "transparent",
+  },
+  dateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#d5dbeb",
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginHorizontal: 4,
+    backgroundColor: "#f9f9ff",
+  },
+  dateBtnText: { color: "#39435e", marginLeft: 5 },
+  budgetsBar: { flexDirection: "row", marginVertical: 5 },
+  budgetBox: { minWidth: 80, padding: 3, paddingRight: 8 },
+  budgetCat: { fontSize: 12, fontWeight: "bold", color: "#3c4251" },
+  budgetTrack: {
+    height: 11,
+    borderRadius: 5,
+    backgroundColor: "#e5e9ff",
+    overflow: "hidden",
+    marginVertical: 3,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  budgetFill: {
+    height: 11,
+    borderRadius: 5,
+    position: "absolute",
+    left: 0,
+    top: 0,
+  },
+  budgetSpent: {
+    fontSize: 10,
+    color: "#222752",
+    marginLeft: 56,
+    fontWeight: "600",
+    position: "absolute",
+  },
+  totalBar: {
+    backgroundColor: "#f6fafd",
+    marginHorizontal: 13,
+    marginTop: 1,
+    borderRadius: 9,
+    padding: 10,
+    alignItems: "center",
+    elevation: 1,
+    shadowOpacity: 0.1,
+  },
+  totalText: { fontWeight: "700", color: "#3e4157", fontSize: 17 },
+  emptyBox: { padding: 28, alignItems: "center" },
+  emptyText: { color: "#999", fontSize: 16 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(17,19,31,.17)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalBox: {
+    width: "87%",
+    backgroundColor: "#fafcff",
+    padding: 25,
+    borderRadius: 19,
+    elevation: 3,
+    shadowColor: "#a9b6fd",
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 14,
+    marginTop: 45,
+  },
+  budgetModalBox: {
+    width: "93%",
+    backgroundColor: "#ffffff",
+    padding: 18,
+    borderRadius: 18,
+    elevation: 3,
+    marginTop: 30,
+  },
+  modaltitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#3d355a",
+    marginBottom: 15,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#d4deec",
+    padding: 7,
+    borderRadius: 10,
+    marginVertical: 4,
+    fontSize: 15,
+    backgroundColor: "#f0f5fd",
+    color: "#183757",
+    flex: 1,
+  },
+  inputPicker: {
+    flex: 1,
+    borderRadius: 10,
+    backgroundColor: "#fcfcfa",
+    color: "#272752",
+    marginVertical: 3,
+    minHeight: 36,
+    maxHeight: 55,
+    marginHorizontal: 6,
+  },
+  errText: {
+    color: "#ff0033",
+    fontSize: 13,
+    marginBottom: 3,
+    marginTop: -5,
+  },
+  modalBtns: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 18,
+  },
+  cancelBtn: {
+    backgroundColor: "#eaeaea",
+    padding: 12,
+    borderRadius: 10,
+    flex: 1,
+    marginRight: 8,
+  },
+  cancelBtnText: { color: "#423f57", textAlign: "center" },
+  saveBtn: {
+    backgroundColor: "#4586e6",
+    padding: 13,
+    borderRadius: 10,
+    flex: 1,
+    elevation: 1,
+    marginLeft: 8,
+  },
+  saveBtnText: { color: "#fff", fontWeight: "bold", textAlign: "center" },
+  txnCard: {
+    marginHorizontal: 11,
+    marginVertical: 6,
+    borderRadius: 13,
+    elevation: 3,
+    backgroundColor: "transparent",
+    shadowColor: "#5855ff",
+    shadowRadius: 5,
+  },
+  txnCardGradient: {
+    padding: 12,
+    borderRadius: 13,
+    shadowOpacity: 0.1,
+  },
+  txnCategory: {
+    fontWeight: "bold",
+    fontSize: 14,
+    color: "#21305d",
+  },
+  txnAmount: {
+    fontWeight: "900",
+    color: "#18498b",
+    fontSize: 17,
+  },
+  txnDate: { fontSize: 13, color: "#49508e" },
+  txnNote: { fontSize: 13, color: "#504f6f", flex: 1 },
+  txnSmall: {
+    fontSize: 12,
+    color: "#7691c6",
+    marginRight: 16,
+    fontStyle: "italic",
+  },
+  txnRecurTag: {
+    fontSize: 11,
+    color: "#da7f32",
+    fontWeight: "bold",
+    backgroundColor: "rgba(252,203,144,.17)",
+    paddingHorizontal: 4,
+    marginLeft: 10,
+    borderRadius: 5,
+    overflow: "hidden",
+  },
+  deleteBtn: {
+    backgroundColor: "#ff4582",
+    justifyContent: "center",
+    alignItems: "flex-end",
+    padding: 22,
+    borderRadius: 14,
+    marginVertical: 7,
+    marginHorizontal: 8,
+  },
+});
+
+// ========== DARK THEME ==========
+const stylesDark = StyleSheet.create({
+  ...stylesLight,
+  heading: { ...stylesLight.heading, color: "#fafaff" },
+  text: { color: "#ececec" },
+  header: { ...stylesLight.header, backgroundColor: "transparent" },
+  inputMinimal: { ...stylesLight.inputMinimal, color: "#fff" },
+  filterPicker: {
+    ...stylesLight.filterPicker,
+    backgroundColor: "#323344",
+    color: "#f3f3f3",
+    borderColor: "#1e243e",
+    borderWidth: 1,
+  },
+  dateBtn: {
+    ...stylesLight.dateBtn,
+    backgroundColor: "#1a1f31",
+    borderColor: "#2c2f42",
+  },
+  dateBtnText: { ...stylesLight.dateBtnText, color: "#d0e2f1" },
+  budgetsBar: { ...stylesLight.budgetsBar },
+  budgetBox: { ...stylesLight.budgetBox },
+  budgetCat: { ...stylesLight.budgetCat, color: "#f0e7ff" },
+  budgetTrack: { ...stylesLight.budgetTrack, backgroundColor: "#222241" },
+  budgetSpent: { ...stylesLight.budgetSpent, color: "#cbe2fc" },
+  totalBar: {
+    ...stylesLight.totalBar,
+    backgroundColor: "#212241",
+    elevation: 2,
+  },
+  totalText: { ...stylesLight.totalText, color: "#b0baff" },
+  emptyBox: { ...stylesLight.emptyBox },
+  emptyText: { ...stylesLight.emptyText, color: "#555ab7" },
+  modalOverlay: { ...stylesLight.modalOverlay, backgroundColor: "rgba(17,19,31,0.73)" },
+  modalBox: { ...stylesLight.modalBox, backgroundColor: "#232841" },
+  budgetModalBox: { ...stylesLight.budgetModalBox, backgroundColor: "#292962" },
+  modaltitle: { ...stylesLight.modaltitle, color: "#edeafc" },
+  input: { ...stylesLight.input, backgroundColor: "#151c30", color: "#b2c7e5", borderColor: "#232851" },
+  inputPicker: {
+    ...stylesLight.inputPicker,
+    backgroundColor: "#232841",
+    color: "#f2c2fd",
+    borderColor: "#1c2140",
+  },
+  errText: { ...stylesLight.errText },
+  modalBtns: { ...stylesLight.modalBtns },
+  cancelBtn: { ...stylesLight.cancelBtn, backgroundColor: "#2c2d42" },
+  saveBtn: { ...stylesLight.saveBtn, backgroundColor: "#7154ff" },
+  txnCard: {
+    ...stylesLight.txnCard,
+    shadowColor: "#6d45f6",
+    backgroundColor: "transparent",
+  },
+  txnCardGradient: { ...stylesLight.txnCardGradient },
+  txnCategory: { ...stylesLight.txnCategory, color: "#d7f3ff" },
+  txnAmount: { ...stylesLight.txnAmount, color: "#b2ccff" },
+  txnDate: { ...stylesLight.txnDate, color: "#9bb6ff" },
+  txnNote: { ...stylesLight.txnNote, color: "#cebeff" },
+  txnSmall: { ...stylesLight.txnSmall, color: "#a67be7" },
+  txnRecurTag: { ...stylesLight.txnRecurTag, color: "#f6c58c" },
+  deleteBtn: { ...stylesLight.deleteBtn },
 });
