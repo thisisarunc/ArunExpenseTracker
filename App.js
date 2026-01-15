@@ -25,11 +25,15 @@ const { width } = Dimensions.get('window');
 
 // Try to import SMS module (Android only)
 let SmsAndroid = null;
-try {
-  SmsAndroid = NativeModules.SmsAndroid || require('react-native-get-sms-android').default;
-} catch (e) {
-  console.log('SMS module not available');
+if (Platform.OS === 'android') {
+  try {
+    const SmsModule = require('react-native-get-sms-android');
+    SmsAndroid = SmsModule.default || SmsModule;
+  } catch (e) {
+    console.log('SMS module not available:', e);
+  }
 }
+
 
 // Payment modes
 const paymentModes = [
@@ -488,6 +492,16 @@ export default function App() {
     .filter(c => c.total > 0)
     .sort((a, b) => b.total - a.total);
 
+  // Calculate payment mode statistics
+  const paymentStats = paymentModes
+    .map(mode => ({
+      ...mode,
+      total: monthTransactions.filter(t => t.paymentMode === mode.id && t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
+    }))
+    .filter(p => p.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+
   const prevMonth = () => {
     if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(currentYear - 1); }
     else setCurrentMonth(currentMonth - 1);
@@ -647,7 +661,28 @@ export default function App() {
         {/* Charts Tab */}
         {activeTab === 'charts' && (
           <>
-            {categoryStats.length > 0 ? (
+            {/* Chart View Toggle */}
+            <View style={styles.chartToggle}>
+              <TouchableOpacity 
+                style={[styles.toggleBtn, chartView === 'category' && styles.toggleBtnActive]}
+                onPress={() => setChartView('category')}
+              >
+                <Text style={[styles.toggleText, chartView === 'category' && styles.toggleTextActive]}>
+                  🏷️ By Category
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.toggleBtn, chartView === 'payment' && styles.toggleBtnActive]}
+                onPress={() => setChartView('payment')}
+              >
+                <Text style={[styles.toggleText, chartView === 'payment' && styles.toggleTextActive]}>
+                  💳 By Payment
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Category View */}
+            {chartView === 'category' && categoryStats.length > 0 ? (
               <>
                 <DonutChart data={categoryStats} total={totalExpense} />
                 {categoryStats.map((cat, index) => {
@@ -672,12 +707,44 @@ export default function App() {
                   );
                 })}
               </>
-            ) : (
+            ) : chartView === 'category' && categoryStats.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyEmoji}>📊</Text>
                 <Text style={styles.emptyText}>No expense data</Text>
               </View>
-            )}
+            ) : null}
+
+            {/* Payment View */}
+            {chartView === 'payment' && paymentStats.length > 0 ? (
+              <>
+                <DonutChart data={paymentStats} total={totalExpense} />
+                {paymentStats.map((payment, index) => {
+                  const percentage = totalExpense > 0 ? ((payment.total / totalExpense) * 100).toFixed(0) : 0;
+                  return (
+                    <View key={payment.id} style={styles.statsItem}>
+                      <View style={[styles.statsIcon, { backgroundColor: payment.bg }]}>
+                        <Text style={{ fontSize: 20 }}>{payment.emoji}</Text>
+                      </View>
+                      <View style={styles.statsInfo}>
+                        <Text style={styles.statsName}>{payment.name}</Text>
+                        <View style={styles.statsBar}>
+                          <View style={[styles.statsBarFill, { width: `${percentage}%`, backgroundColor: colors[index % colors.length] }]} />
+                        </View>
+                      </View>
+                      <View style={styles.statsRight}>
+                        <Text style={[styles.statsPercent, { color: colors[index % colors.length] }]}>{percentage}%</Text>
+                        <Text style={styles.statsAmount}>{formatCurrency(payment.total)}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </>
+            ) : chartView === 'payment' && paymentStats.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyEmoji}>📊</Text>
+                <Text style={styles.emptyText}>No expense data</Text>
+              </View>
+            ) : null}
           </>
         )}
 
@@ -1155,4 +1222,9 @@ const styles = StyleSheet.create({
   iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, marginBottom: 20 },
   iconOption: { width: (width - 40 - 32) / 5, aspectRatio: 1, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   iconOptionSelected: { borderWidth: 3, borderColor: '#FF9BB3' },
+  chartToggle: { flexDirection: 'row', backgroundColor: '#F8F8FA', padding: 4, borderRadius: 12, marginBottom: 20 },
+  toggleBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  toggleBtnActive: { backgroundColor: '#FF9BB3', shadowColor: '#FF9BB3', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
+  toggleText: { fontSize: 13, fontWeight: '600', color: '#B8B8D0' },
+  toggleTextActive: { color: '#fff' },
 });
