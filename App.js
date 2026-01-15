@@ -34,7 +34,6 @@ if (Platform.OS === 'android') {
   }
 }
 
-
 // Payment modes
 const paymentModes = [
   { id: 'cash', name: 'Cash', emoji: '💵', color: '#4CAF50', bg: '#E8F5E9' },
@@ -181,11 +180,19 @@ export default function App() {
     note: '',
     category: 'food',
     paymentMode: 'cash',
+    date: new Date().toISOString().split('T')[0],
   });
   const [newCategory, setNewCategory] = useState({ name: '', icon: 'other', type: 'expense' });
   const [loading, setLoading] = useState(true);
   const [budget, setBudget] = useState(50000);
   const [chartView, setChartView] = useState('category');
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  const [cardMappings, setCardMappings] = useState({});
+  const [showCardMapping, setShowCardMapping] = useState(false);
+  const [newCardLast4, setNewCardLast4] = useState('');
+  const [newCardType, setNewCardType] = useState('debit');
+  const [detailView, setDetailView] = useState(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   
   // SMS related states
   const [smsPermission, setSmsPermission] = useState(false);
@@ -204,7 +211,7 @@ export default function App() {
     if (!loading) {
       saveData();
     }
-  }, [transactions, categories, budget, lastSyncDate]);
+  }, [transactions, categories, budget, lastSyncDate, cardMappings]);
 
   const loadData = async () => {
     try {
@@ -214,6 +221,7 @@ export default function App() {
         setTransactions(parsed.transactions || []);
         setBudget(parsed.budget || 50000);
         setLastSyncDate(parsed.lastSyncDate || null);
+        setCardMappings(parsed.cardMappings || {});
         if (parsed.categories?.length > 0) {
           setCategories(parsed.categories);
         }
@@ -227,7 +235,7 @@ export default function App() {
   const saveData = async () => {
     try {
       await AsyncStorage.setItem('moneyplus-data-v2', JSON.stringify({ 
-        transactions, categories, budget, lastSyncDate 
+        transactions, categories, budget, lastSyncDate, cardMappings
       }));
     } catch (e) {
       console.log('Error saving data:', e);
@@ -400,25 +408,74 @@ export default function App() {
     }
 
     const cat = categories.find(c => c.id === newTransaction.category);
-    const transaction = {
-      id: Date.now(),
-      amount,
-      note: newTransaction.note || cat?.name || 'Transaction',
-      category: newTransaction.category,
-      paymentMode: newTransaction.paymentMode,
-      date: new Date().toISOString().split('T')[0],
-      type: transactionType,
-      source: 'manual',
-    };
+    
+    if (editingTransaction) {
+      // Edit mode
+      const updatedTransaction = {
+        ...editingTransaction,
+        amount,
+        note: newTransaction.note || cat?.name || 'Transaction',
+        category: newTransaction.category,
+        paymentMode: newTransaction.paymentMode,
+        date: newTransaction.date,
+        type: transactionType,
+      };
+      setTransactions(prev => prev.map(t => t.id === editingTransaction.id ? updatedTransaction : t));
+      setEditingTransaction(null);
+    } else {
+      // Add mode
+      const transaction = {
+        id: Date.now(),
+        amount,
+        note: newTransaction.note || cat?.name || 'Transaction',
+        category: newTransaction.category,
+        paymentMode: newTransaction.paymentMode,
+        date: newTransaction.date,
+        type: transactionType,
+        source: 'manual',
+      };
+      setTransactions(prev => [transaction, ...prev]);
+    }
 
-    setTransactions(prev => [transaction, ...prev]);
     setNewTransaction({
       amount: '',
       note: '',
       category: transactionType === 'income' ? 'salary' : 'food',
       paymentMode: 'cash',
+      date: new Date().toISOString().split('T')[0],
     });
     setShowAddModal(false);
+  };
+
+  const editTransaction = (transaction) => {
+    setEditingTransaction(transaction);
+    setTransactionType(transaction.type);
+    setNewTransaction({
+      amount: transaction.amount.toString(),
+      note: transaction.note,
+      category: transaction.category,
+      paymentMode: transaction.paymentMode,
+      date: transaction.date,
+    });
+    setShowAddModal(true);
+  };
+
+  const addCardMapping = () => {
+    if (!newCardLast4 || newCardLast4.length !== 4) {
+      Alert.alert('Error', 'Please enter last 4 digits');
+      return;
+    }
+    setCardMappings(prev => ({ ...prev, [newCardLast4]: newCardType }));
+    setNewCardLast4('');
+    setNewCardType('debit');
+  };
+
+  const deleteCardMapping = (last4) => {
+    setCardMappings(prev => {
+      const updated = { ...prev };
+      delete updated[last4];
+      return updated;
+    });
   };
 
   const addCategory = () => {
@@ -474,10 +531,12 @@ export default function App() {
     return date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
   };
 
-  const monthTransactions = transactions.filter(t => {
-    const d = new Date(t.date);
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-  });
+  const monthTransactions = transactions
+    .filter(t => {
+      const d = new Date(t.date);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    })
+    .sort((a, b) => new Date(b.date) - new Date(a.date)); // Latest first
 
   const totalIncome = monthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
   const totalExpense = monthTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
@@ -500,7 +559,6 @@ export default function App() {
     }))
     .filter(p => p.total > 0)
     .sort((a, b) => b.total - a.total);
-
 
   const prevMonth = () => {
     if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(currentYear - 1); }
@@ -632,7 +690,10 @@ export default function App() {
                           <Text style={{ fontSize: 22 }}>{iconData.emoji}</Text>
                         </View>
                         <View style={styles.transactionInfo}>
-                          <Text style={styles.transactionNote} numberOfLines={1}>{t.note}</Text>
+                          <Text style={styles.transactionCategory}>{cat.name}</Text>
+                          {t.note && t.note !== cat.name && (
+                            <Text style={styles.transactionNote} numberOfLines={1}>{t.note}</Text>
+                          )}
                           <View style={styles.transactionMeta}>
                             <View style={[styles.paymentBadge, { backgroundColor: payMode.bg }]}>
                               <Text style={[styles.paymentBadgeText, { color: payMode.color }]}>
@@ -646,9 +707,17 @@ export default function App() {
                             )}
                           </View>
                         </View>
-                        <Text style={[styles.transactionAmount, { color: t.type === 'income' ? '#4CAF50' : '#FF6B8A' }]}>
-                          {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                        </Text>
+                        <View style={styles.transactionRight}>
+                          <Text style={[styles.transactionAmount, { color: t.type === 'income' ? '#4CAF50' : '#FF6B8A' }]}>
+                            {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                          </Text>
+                          <TouchableOpacity 
+                            style={styles.editBtn}
+                            onPress={() => editTransaction(t)}
+                          >
+                            <Ionicons name="create-outline" size={18} color="#9B6BFF" />
+                          </TouchableOpacity>
+                        </View>
                       </TouchableOpacity>
                     );
                   })}
@@ -659,7 +728,7 @@ export default function App() {
         )}
 
         {/* Charts Tab */}
-        {activeTab === 'charts' && (
+        {activeTab === 'charts' && !detailView && (
           <>
             {/* Chart View Toggle */}
             <View style={styles.chartToggle}>
@@ -689,7 +758,11 @@ export default function App() {
                   const iconData = iconLibrary[cat.icon] || iconLibrary.other;
                   const percentage = totalExpense > 0 ? ((cat.total / totalExpense) * 100).toFixed(0) : 0;
                   return (
-                    <View key={cat.id} style={styles.statsItem}>
+                    <TouchableOpacity 
+                      key={cat.id} 
+                      style={styles.statsItem}
+                      onPress={() => setDetailView({ type: 'category', id: cat.id, name: cat.name })}
+                    >
                       <View style={[styles.statsIcon, { backgroundColor: iconData.bg }]}>
                         <Text style={{ fontSize: 20 }}>{iconData.emoji}</Text>
                       </View>
@@ -703,7 +776,7 @@ export default function App() {
                         <Text style={[styles.statsPercent, { color: colors[index % colors.length] }]}>{percentage}%</Text>
                         <Text style={styles.statsAmount}>{formatCurrency(cat.total)}</Text>
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </>
@@ -721,7 +794,11 @@ export default function App() {
                 {paymentStats.map((payment, index) => {
                   const percentage = totalExpense > 0 ? ((payment.total / totalExpense) * 100).toFixed(0) : 0;
                   return (
-                    <View key={payment.id} style={styles.statsItem}>
+                    <TouchableOpacity 
+                      key={payment.id} 
+                      style={styles.statsItem}
+                      onPress={() => setDetailView({ type: 'payment', id: payment.id, name: payment.name })}
+                    >
                       <View style={[styles.statsIcon, { backgroundColor: payment.bg }]}>
                         <Text style={{ fontSize: 20 }}>{payment.emoji}</Text>
                       </View>
@@ -735,7 +812,7 @@ export default function App() {
                         <Text style={[styles.statsPercent, { color: colors[index % colors.length] }]}>{percentage}%</Text>
                         <Text style={styles.statsAmount}>{formatCurrency(payment.total)}</Text>
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </>
@@ -746,6 +823,46 @@ export default function App() {
               </View>
             ) : null}
           </>
+        )}
+
+        {/* Detail View */}
+        {detailView && (
+          <View style={styles.detailViewContainer}>
+            <View style={styles.detailHeader}>
+              <TouchableOpacity onPress={() => setDetailView(null)}>
+                <Ionicons name="arrow-back" size={24} color="#5A5A7A" />
+              </TouchableOpacity>
+              <Text style={styles.detailTitle}>{detailView.name}</Text>
+            </View>
+            
+            <ScrollView>
+              {monthTransactions
+                .filter(t => 
+                  detailView.type === 'category' 
+                    ? t.category === detailView.id
+                    : t.paymentMode === detailView.id
+                )
+                .map(t => {
+                  const cat = categories.find(c => c.id === t.category);
+                  const iconData = iconLibrary[cat?.icon] || iconLibrary.other;
+                  return (
+                    <View key={t.id} style={styles.transactionItem}>
+                      <View style={[styles.transactionIcon, { backgroundColor: iconData.bg }]}>
+                        <Text style={{ fontSize: 22 }}>{iconData.emoji}</Text>
+                      </View>
+                      <View style={styles.transactionInfo}>
+                        <Text style={styles.transactionCategory}>{cat?.name}</Text>
+                        {t.note && <Text style={styles.transactionNote}>{t.note}</Text>}
+                        <Text style={styles.transactionDate}>{t.date}</Text>
+                      </View>
+                      <Text style={styles.transactionAmount}>
+                        {formatCurrency(t.amount)}
+                      </Text>
+                    </View>
+                  );
+                })}
+            </ScrollView>
+          </View>
         )}
 
         {/* Settings Tab */}
@@ -775,6 +892,24 @@ export default function App() {
                   </Text>
                 </View>
               </View>
+            </View>
+
+            {/* Card Mapping Section */}
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsSectionTitle}>💳 Card Mapping</Text>
+              <TouchableOpacity 
+                style={styles.settingsItem} 
+                onPress={() => setShowCardMapping(true)}
+              >
+                <Ionicons name="card" size={24} color="#6BAFFF" />
+                <View style={styles.settingsItemInfo}>
+                  <Text style={styles.settingsItemTitle}>Map Card Numbers</Text>
+                  <Text style={styles.settingsItemDesc}>
+                    {Object.keys(cardMappings).length} cards mapped
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#ccc" />
+              </TouchableOpacity>
             </View>
 
             {/* Budget Section */}
@@ -855,8 +990,18 @@ export default function App() {
         <View style={styles.modalOverlay}>
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Transaction</Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)}>
+              <Text style={styles.modalTitle}>{editingTransaction ? 'Edit Transaction' : 'Add Transaction'}</Text>
+              <TouchableOpacity onPress={() => {
+                setShowAddModal(false);
+                setEditingTransaction(null);
+                setNewTransaction({
+                  amount: '',
+                  note: '',
+                  category: 'food',
+                  paymentMode: 'cash',
+                  date: new Date().toISOString().split('T')[0],
+                });
+              }}>
                 <Ionicons name="close" size={24} color="#B8B8D0" />
               </TouchableOpacity>
             </View>
@@ -891,14 +1036,38 @@ export default function App() {
                 />
               </View>
 
-              {/* Note */}
-              <TextInput
-                style={styles.noteInput}
-                placeholder="Add note..."
-                placeholderTextColor="#B8B8D0"
-                value={newTransaction.note}
-                onChangeText={(text) => setNewTransaction(prev => ({ ...prev, note: text }))}
-              />
+              {/* Note Input */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Note (Optional)</Text>
+                <TextInput
+                  style={styles.noteInput}
+                  value={newTransaction.note}
+                  onChangeText={(text) => setNewTransaction(prev => ({ ...prev, note: text }))}
+                  placeholder="Enter note..."
+                  placeholderTextColor="#B8B8D0"
+                  multiline
+                />
+              </View>
+
+              {/* Date Picker */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Date</Text>
+                <View style={styles.datePickerRow}>
+                  <TouchableOpacity 
+                    style={styles.todayBtn}
+                    onPress={() => setNewTransaction(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }))}
+                  >
+                    <Text style={styles.todayBtnText}>TODAY</Text>
+                  </TouchableOpacity>
+                  <TextInput
+                    style={styles.dateInput}
+                    value={newTransaction.date}
+                    onChangeText={(text) => setNewTransaction(prev => ({ ...prev, date: text }))}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor="#B8B8D0"
+                  />
+                </View>
+              </View>
 
               {/* Payment Mode */}
               {transactionType === 'expense' && (
@@ -943,8 +1112,68 @@ export default function App() {
 
               <TouchableOpacity style={styles.saveBtn} onPress={addTransaction}>
                 <Ionicons name="checkmark" size={22} color="#fff" />
-                <Text style={styles.saveBtnText}>Save Transaction</Text>
+                <Text style={styles.saveBtnText}>{editingTransaction ? 'Update Transaction' : 'Save Transaction'}</Text>
               </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Card Mapping Modal */}
+      <Modal visible={showCardMapping} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>💳 Card Mapping</Text>
+              <TouchableOpacity onPress={() => setShowCardMapping(false)}>
+                <Ionicons name="close" size={24} color="#5A5A7A" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 400 }}>
+              {/* Add New Card */}
+              <View style={styles.cardMappingForm}>
+                <Text style={styles.inputLabel}>Last 4 Digits</Text>
+                <TextInput
+                  style={styles.input}
+                  value={newCardLast4}
+                  onChangeText={setNewCardLast4}
+                  placeholder="1234"
+                  keyboardType="numeric"
+                  maxLength={4}
+                />
+                
+                <Text style={styles.inputLabel}>Card Type</Text>
+                <View style={styles.cardTypeRow}>
+                  {['credit', 'debit', 'upi'].map(type => (
+                    <TouchableOpacity
+                      key={type}
+                      style={[styles.cardTypeBtn, newCardType === type && styles.cardTypeBtnActive]}
+                      onPress={() => setNewCardType(type)}
+                    >
+                      <Text style={[styles.cardTypeText, newCardType === type && styles.cardTypeTextActive]}>
+                        {type.charAt(0).toUpperCase() + type.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                
+                <TouchableOpacity style={styles.addCardBtn} onPress={addCardMapping}>
+                  <Text style={styles.addCardBtnText}>Add Mapping</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Existing Mappings */}
+              <Text style={styles.sectionTitleInModal}>Saved Mappings</Text>
+              {Object.entries(cardMappings).map(([last4, type]) => (
+                <View key={last4} style={styles.cardMappingItem}>
+                  <Text style={styles.cardLast4}>••• {last4}</Text>
+                  <Text style={styles.cardType}>{type}</Text>
+                  <TouchableOpacity onPress={() => deleteCardMapping(last4)}>
+                    <Ionicons name="trash-outline" size={20} color="#FF6B8A" />
+                  </TouchableOpacity>
+                </View>
+              ))}
             </ScrollView>
           </View>
         </View>
@@ -1133,13 +1362,17 @@ const styles = StyleSheet.create({
   transactionItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', padding: 12, borderRadius: 14, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
   transactionIcon: { width: 46, height: 46, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   transactionInfo: { flex: 1, marginLeft: 12 },
-  transactionNote: { fontSize: 13, fontWeight: '600', color: '#5A5A7A', marginBottom: 4 },
+  transactionCategory: { fontSize: 14, fontWeight: '600', color: '#5A5A7A', marginBottom: 2 },
+  transactionNote: { fontSize: 12, color: '#B8B8D0', marginBottom: 4 },
   transactionMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   paymentBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   paymentBadgeText: { fontSize: 9, fontWeight: '600' },
   smsBadge: { backgroundColor: '#E3F2FD', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
   smsBadgeText: { fontSize: 8, color: '#2196F3', fontWeight: '600' },
+  transactionRight: { alignItems: 'flex-end' },
   transactionAmount: { fontSize: 14, fontWeight: '700' },
+  transactionDate: { fontSize: 11, color: '#B8B8D0', marginTop: 2 },
+  editBtn: { marginTop: 4, padding: 4 },
   emptyState: { alignItems: 'center', paddingVertical: 40 },
   emptyEmoji: { fontSize: 48, marginBottom: 12 },
   emptyText: { fontSize: 16, fontWeight: '600', color: '#5A5A7A' },
@@ -1181,6 +1414,7 @@ const styles = StyleSheet.create({
   navDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#FF9BB3', marginTop: 4 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modal: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%', paddingBottom: 30 },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%', paddingBottom: 30 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
   modalTitle: { fontSize: 18, fontWeight: '700', color: '#5A5A7A' },
   typeToggle: { flexDirection: 'row', gap: 10, padding: 14, paddingHorizontal: 20 },
@@ -1193,8 +1427,16 @@ const styles = StyleSheet.create({
   amountSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FAFAFA', marginHorizontal: 20, padding: 16, borderRadius: 16, marginBottom: 16 },
   currencySign: { fontSize: 28, color: '#B8B8D0', fontWeight: '600' },
   amountInput: { fontSize: 36, fontWeight: '800', color: '#5A5A7A', marginLeft: 8, minWidth: 120, textAlign: 'center' },
-  noteInput: { backgroundColor: '#FAFAFA', marginHorizontal: 20, padding: 14, borderRadius: 12, fontSize: 14, color: '#5A5A7A', marginBottom: 16 },
+  inputGroup: { marginHorizontal: 20, marginBottom: 16 },
+  inputLabel: { fontSize: 13, fontWeight: '600', color: '#5A5A7A', marginBottom: 8 },
+  noteInput: { backgroundColor: '#F8F8FA', borderRadius: 12, padding: 14, fontSize: 15, color: '#5A5A7A', minHeight: 60, textAlignVertical: 'top' },
+  datePickerRow: { flexDirection: 'row', gap: 10 },
+  todayBtn: { backgroundColor: '#FF9BB3', paddingHorizontal: 20, paddingVertical: 14, borderRadius: 12 },
+  todayBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  dateInput: { flex: 1, backgroundColor: '#F8F8FA', borderRadius: 12, padding: 14, fontSize: 15, color: '#5A5A7A' },
+  input: { backgroundColor: '#F8F8FA', borderRadius: 12, padding: 14, fontSize: 15, color: '#5A5A7A' },
   sectionLabel: { fontSize: 13, fontWeight: '600', color: '#888', marginLeft: 20, marginBottom: 10 },
+  sectionTitleInModal: { fontSize: 14, fontWeight: '700', color: '#5A5A7A', marginHorizontal: 20, marginTop: 16, marginBottom: 12 },
   paymentGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, marginBottom: 16 },
   paymentOption: { width: (width - 40 - 16) / 3, padding: 12, borderRadius: 12, backgroundColor: '#f9f9f9', alignItems: 'center' },
   paymentOptLabel: { fontSize: 10, fontWeight: '600', color: '#888', textAlign: 'center', marginTop: 4 },
@@ -1227,4 +1469,18 @@ const styles = StyleSheet.create({
   toggleBtnActive: { backgroundColor: '#FF9BB3', shadowColor: '#FF9BB3', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
   toggleText: { fontSize: 13, fontWeight: '600', color: '#B8B8D0' },
   toggleTextActive: { color: '#fff' },
+  cardMappingForm: { padding: 20, backgroundColor: '#F8F8FA', borderRadius: 12, marginBottom: 20 },
+  cardTypeRow: { flexDirection: 'row', gap: 10, marginTop: 8, marginBottom: 16 },
+  cardTypeBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#fff', alignItems: 'center', borderWidth: 2, borderColor: '#E8E8E8' },
+  cardTypeBtnActive: { backgroundColor: '#FF9BB3', borderColor: '#FF9BB3' },
+  cardTypeText: { fontSize: 13, fontWeight: '600', color: '#B8B8D0' },
+  cardTypeTextActive: { color: '#fff' },
+  addCardBtn: { backgroundColor: '#9B6BFF', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  addCardBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  cardMappingItem: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#fff', borderRadius: 12, marginBottom: 10 },
+  cardLast4: { flex: 1, fontSize: 16, fontWeight: '600', color: '#5A5A7A' },
+  cardType: { fontSize: 14, color: '#9B6BFF', marginRight: 12, textTransform: 'capitalize' },
+  detailViewContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#FFF9FC', zIndex: 1000 },
+  detailHeader: { flexDirection: 'row', alignItems: 'center', padding: 20, paddingTop: 60, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
+  detailTitle: { fontSize: 18, fontWeight: '700', color: '#5A5A7A', marginLeft: 16 },
 });
