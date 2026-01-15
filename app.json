@@ -22,7 +22,8 @@
       "package": "com.moneyplus.expensetracker",
       "permissions": [
         "android.permission.READ_SMS",
-        "android.permission.RECEIVE_SMS"
+        "android.permission.RECEIVE_SMS",
+        "android.permission.READ_PHONE_STATE"
       ]
     },
     "ios": {
@@ -33,6 +34,16 @@
       "eas": {
         "projectId": "41d37f33-d23f-4e63-a586-dcddb5d276dc"
       }
-    }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 21
+          }
+        }
+      ]
+    ]
   }
 }
