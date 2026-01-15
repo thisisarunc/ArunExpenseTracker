@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "Money Plus",
+    "slug": "money-plus-expense-tracker",
+    "owner": "arunsoftss-organization",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFF9FC"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#FFF9FC"
+      },
+      "package": "com.moneyplus.expensetracker",
+      "permissions": [
+        "android.permission.READ_SMS",
+        "android.permission.RECEIVE_SMS",
+        "android.permission.READ_PHONE_STATE"
+      ]
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.moneyplus.expensetracker"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "41d37f33-d23f-4e63-a586-dcddb5d276dc"
+      }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 21
+          }
+        }
+      ]
+    ]
+  }
+}
