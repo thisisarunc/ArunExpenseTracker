@@ -1,1281 +1,1150 @@
-import React, { useState, useEffect } from ‘react’;
-import {
-View,
-Text,
-StyleSheet,
-TouchableOpacity,
-ScrollView,
-TextInput,
-Modal,
-SafeAreaView,
-StatusBar,
-Dimensions,
-Alert,
-Platform,
-PermissionsAndroid,
-ActivityIndicator,
-} from ‘react-native’;
-import AsyncStorage from ‘@react-native-async-storage/async-storage’;
-import Svg, { Circle, Path } from ‘react-native-svg’;
-import { Ionicons } from ‘@expo/vector-icons’;
-
-const { width } = Dimensions.get(‘window’);
-
-// Error Boundary Component
-class ErrorBoundary extends React.Component {
-constructor(props) {
-super(props);
-this.state = { hasError: false, error: null };
-}
-
-static getDerivedStateFromError(error) {
-return { hasError: true, error };
-}
-
-componentDidCatch(error, errorInfo) {
-console.log(‘Error caught by boundary:’, error, errorInfo);
-}
-
-render() {
-if (this.state.hasError) {
-return (
-<SafeAreaView style={styles.container}>
-<View style={styles.errorContainer}>
-<Text style={styles.errorIcon}>⚠️</Text>
-<Text style={styles.errorTitle}>Oops! Something went wrong</Text>
-<Text style={styles.errorMessage}>
-{this.state.error?.message || ‘An unexpected error occurred’}
-</Text>
-<TouchableOpacity
-style={styles.retryButton}
-onPress={() => this.setState({ hasError: false, error: null })}
->
-<Text style={styles.retryButtonText}>Try Again</Text>
-</TouchableOpacity>
-</View>
-</SafeAreaView>
-);
-}
-
-```
-return this.props.children;
-```
-
-}
-}
-
-// Safe SMS parser import with fallback
-let parseSMS = null;
-let isBankSender = null;
-try {
-const smsParserModule = require(’./smsParser’);
-parseSMS = smsParserModule.parseSMS;
-isBankSender = smsParserModule.isBankSender;
-} catch (e) {
-console.log(‘SMS parser not available:’, e);
-parseSMS = (text) => null;
-isBankSender = (sender) => false;
-}
-
-// Try to import SMS module (Android only) with better error handling
-let SmsAndroid = null;
-if (Platform.OS === ‘android’) {
-try {
-const SmsModule = require(‘react-native-get-sms-android’);
-SmsAndroid = SmsModule.default || SmsModule;
-} catch (e) {
-console.log(‘SMS module not available:’, e);
-}
-}
+import React, { useState, useEffect } from 'react';
+import { Plus, ChevronLeft, ChevronRight, X, Check, Trash2, TrendingUp, TrendingDown, Search, RefreshCw, Smartphone, Clock, Building2 } from 'lucide-react';
 
 // Payment modes
 const paymentModes = [
-{ id: ‘cash’, name: ‘Cash’, emoji: ‘💵’, color: ‘#4CAF50’, bg: ‘#E8F5E9’ },
-{ id: ‘credit’, name: ‘Credit Card’, emoji: ‘💳’, color: ‘#E91E63’, bg: ‘#FCE4EC’ },
-{ id: ‘debit’, name: ‘Debit Card’, emoji: ‘💳’, color: ‘#2196F3’, bg: ‘#E3F2FD’ },
-{ id: ‘upi’, name: ‘UPI’, emoji: ‘📱’, color: ‘#9C27B0’, bg: ‘#F3E5F5’ },
-{ id: ‘netbanking’, name: ‘Net Banking’, emoji: ‘🏦’, color: ‘#FF9800’, bg: ‘#FFF3E0’ },
+  { id: 'cash', name: 'Cash', emoji: '💵', color: '#4CAF50', bg: '#E8F5E9' },
+  { id: 'credit', name: 'Credit Card', emoji: '💳', color: '#E91E63', bg: '#FCE4EC' },
+  { id: 'debit', name: 'Debit Card', emoji: '💳', color: '#2196F3', bg: '#E3F2FD' },
+  { id: 'upi', name: 'UPI', emoji: '📱', color: '#9C27B0', bg: '#F3E5F5' },
+  { id: 'netbanking', name: 'Net Banking', emoji: '🏦', color: '#FF9800', bg: '#FFF3E0' },
 ];
 
-// Icon library
+// Cute icon library
 const iconLibrary = {
-burger: { emoji: ‘🍔’, bg: ‘#FFF3E5’ },
-biryani: { emoji: ‘🍛’, bg: ‘#FFF8DC’ },
-coffee: { emoji: ‘☕’, bg: ‘#F5F5DC’ },
-pizza: { emoji: ‘🍕’, bg: ‘#FFF3E0’ },
-cake: { emoji: ‘🍰’, bg: ‘#FFF0F5’ },
-shopping: { emoji: ‘🛍️’, bg: ‘#FFE4E1’ },
-dress: { emoji: ‘👗’, bg: ‘#FFF0F5’ },
-bag: { emoji: ‘👜’, bg: ‘#FFEFD5’ },
-car: { emoji: ‘🚗’, bg: ‘#E6E6FA’ },
-auto: { emoji: ‘🛺’, bg: ‘#FFFACD’ },
-metro: { emoji: ‘🚇’, bg: ‘#E6E6FA’ },
-fuel: { emoji: ‘⛽’, bg: ‘#FFE4E1’ },
-plane: { emoji: ‘✈️’, bg: ‘#E6F3FF’ },
-house: { emoji: ‘🏠’, bg: ‘#FFEFD5’ },
-rent: { emoji: ‘🏢’, bg: ‘#F0F0F0’ },
-electricity: { emoji: ‘💡’, bg: ‘#FFFACD’ },
-water: { emoji: ‘💧’, bg: ‘#E6F3FF’ },
-gas: { emoji: ‘🔥’, bg: ‘#FFE4E1’ },
-wifi: { emoji: ‘📶’, bg: ‘#E6E6FA’ },
-phone: { emoji: ‘📱’, bg: ‘#F0F0F0’ },
-movie: { emoji: ‘🎬’, bg: ‘#FFE4E1’ },
-game: { emoji: ‘🎮’, bg: ‘#F3E5FF’ },
-party: { emoji: ‘🎉’, bg: ‘#FFE4E1’ },
-hospital: { emoji: ‘🏥’, bg: ‘#FFE4E1’ },
-medicine: { emoji: ‘💊’, bg: ‘#FFF0F5’ },
-gym: { emoji: ‘🏋️’, bg: ‘#E6E6FA’ },
-book: { emoji: ‘📚’, bg: ‘#FFEFD5’ },
-laptop: { emoji: ‘💻’, bg: ‘#F0F0F0’ },
-bill: { emoji: ‘📄’, bg: ‘#F0F0F0’ },
-tax: { emoji: ‘🧾’, bg: ‘#F0F0F0’ },
-insurance: { emoji: ‘🛡️’, bg: ‘#E6F3FF’ },
-invest: { emoji: ‘📈’, bg: ‘#E5FFF5’ },
-emi: { emoji: ‘🏦’, bg: ‘#FFF3E0’ },
-salon: { emoji: ‘💇’, bg: ‘#FFF0F5’ },
-family: { emoji: ‘👨‍👩‍👧’, bg: ‘#FFE4E1’ },
-donation: { emoji: ‘🙏’, bg: ‘#FFF0F5’ },
-salary: { emoji: ‘💰’, bg: ‘#E5FFF5’ },
-bonus: { emoji: ‘🎊’, bg: ‘#FFFACD’ },
-freelance: { emoji: ‘💼’, bg: ‘#E6E6FA’ },
-refund: { emoji: ‘💸’, bg: ‘#E5FFF5’ },
-interest: { emoji: ‘🏦’, bg: ‘#FFF3E0’ },
-groceries: { emoji: ‘🛒’, bg: ‘#E8F5E9’ },
-transport: { emoji: ‘🚌’, bg: ‘#E3F2FD’ },
-entertainment: { emoji: ‘🎭’, bg: ‘#FCE4EC’ },
-mobile: { emoji: ‘📱’, bg: ‘#F3E5F5’ },
-education: { emoji: ‘🎓’, bg: ‘#E6E6FA’ },
-food: { emoji: ‘🍽️’, bg: ‘#FFF3E0’ },
-other: { emoji: ‘📦’, bg: ‘#F5F5F5’ },
+  burger: { emoji: '🍔', bg: '#FFF3E5' },
+  biryani: { emoji: '🍛', bg: '#FFF8DC' },
+  coffee: { emoji: '☕', bg: '#F5F5DC' },
+  pizza: { emoji: '🍕', bg: '#FFF3E0' },
+  cake: { emoji: '🍰', bg: '#FFF0F5' },
+  shopping: { emoji: '🛍️', bg: '#FFE4E1' },
+  bag: { emoji: '👜', bg: '#FFEFD5' },
+  gift: { emoji: '🎁', bg: '#FFE4E1' },
+  car: { emoji: '🚗', bg: '#E6E6FA' },
+  auto: { emoji: '🛺', bg: '#FFFACD' },
+  metro: { emoji: '🚇', bg: '#E6E6FA' },
+  fuel: { emoji: '⛽', bg: '#FFE4E1' },
+  plane: { emoji: '✈️', bg: '#E6F3FF' },
+  rent: { emoji: '🏢', bg: '#F0F0F0' },
+  electricity: { emoji: '💡', bg: '#FFFACD' },
+  water: { emoji: '💧', bg: '#E6F3FF' },
+  gas: { emoji: '🔥', bg: '#FFE4E1' },
+  wifi: { emoji: '📶', bg: '#E6E6FA' },
+  phone: { emoji: '📱', bg: '#F0F0F0' },
+  movie: { emoji: '🎬', bg: '#FFE4E1' },
+  game: { emoji: '🎮', bg: '#F3E5FF' },
+  party: { emoji: '🎉', bg: '#FFE4E1' },
+  hospital: { emoji: '🏥', bg: '#FFE4E1' },
+  medicine: { emoji: '💊', bg: '#FFF0F5' },
+  gym: { emoji: '🏋️', bg: '#E6E6FA' },
+  book: { emoji: '📚', bg: '#FFEFD5' },
+  laptop: { emoji: '💻', bg: '#F0F0F0' },
+  insurance: { emoji: '🛡️', bg: '#E6F3FF' },
+  invest: { emoji: '📈', bg: '#E5FFF5' },
+  emi: { emoji: '🏦', bg: '#FFF3E0' },
+  salon: { emoji: '💇', bg: '#FFF0F5' },
+  family: { emoji: '👨‍👩‍👧', bg: '#FFE4E1' },
+  donation: { emoji: '🙏', bg: '#FFF0F5' },
+  salary: { emoji: '💰', bg: '#E5FFF5' },
+  bonus: { emoji: '🎊', bg: '#FFFACD' },
+  freelance: { emoji: '💼', bg: '#E6E6FA' },
+  refund: { emoji: '💸', bg: '#E5FFF5' },
+  interest: { emoji: '🏦', bg: '#FFF3E0' },
+  groceries: { emoji: '🛒', bg: '#E8F5E9' },
+  other: { emoji: '📦', bg: '#F5F5F5' },
 };
 
 // Default categories
 const defaultCategories = [
-{ id: ‘food’, name: ‘Food & Dining’, icon: ‘food’, type: ‘expense’ },
-{ id: ‘shopping’, name: ‘Shopping’, icon: ‘shopping’, type: ‘expense’ },
-{ id: ‘transport’, name: ‘Transport’, icon: ‘transport’, type: ‘expense’ },
-{ id: ‘entertainment’, name: ‘Entertainment’, icon: ‘entertainment’, type: ‘expense’ },
-{ id: ‘bills’, name: ‘Bills & Utilities’, icon: ‘bill’, type: ‘expense’ },
-{ id: ‘health’, name: ‘Healthcare’, icon: ‘hospital’, type: ‘expense’ },
-{ id: ‘groceries’, name: ‘Groceries’, icon: ‘groceries’, type: ‘expense’ },
-{ id: ‘education’, name: ‘Education’, icon: ‘education’, type: ‘expense’ },
-{ id: ‘salary’, name: ‘Salary’, icon: ‘salary’, type: ‘income’ },
-{ id: ‘freelance’, name: ‘Freelance’, icon: ‘freelance’, type: ‘income’ },
-{ id: ‘investment’, name: ‘Investment’, icon: ‘invest’, type: ‘income’ },
+  { id: 'food', name: 'Food & Dining', icon: 'biryani', type: 'expense' },
+  { id: 'groceries', name: 'Groceries', icon: 'groceries', type: 'expense' },
+  { id: 'transport', name: 'Transport', icon: 'auto', type: 'expense' },
+  { id: 'fuel', name: 'Fuel', icon: 'fuel', type: 'expense' },
+  { id: 'shopping', name: 'Shopping', icon: 'bag', type: 'expense' },
+  { id: 'entertainment', name: 'Entertainment', icon: 'movie', type: 'expense' },
+  { id: 'rent', name: 'Rent', icon: 'rent', type: 'expense' },
+  { id: 'electricity', name: 'Electricity', icon: 'electricity', type: 'expense' },
+  { id: 'mobile', name: 'Mobile', icon: 'phone', type: 'expense' },
+  { id: 'wifi', name: 'Internet', icon: 'wifi', type: 'expense' },
+  { id: 'health', name: 'Health', icon: 'hospital', type: 'expense' },
+  { id: 'emi', name: 'EMI', icon: 'emi', type: 'expense' },
+  { id: 'insurance', name: 'Insurance', icon: 'insurance', type: 'expense' },
+  { id: 'other', name: 'Other', icon: 'other', type: 'expense' },
+  { id: 'salary', name: 'Salary', icon: 'salary', type: 'income' },
+  { id: 'bonus', name: 'Bonus', icon: 'bonus', type: 'income' },
+  { id: 'freelance', name: 'Freelance', icon: 'freelance', type: 'income' },
+  { id: 'refund', name: 'Refund', icon: 'refund', type: 'income' },
 ];
 
-function AppContent() {
-const [transactions, setTransactions] = useState([]);
-const [categories, setCategories] = useState(defaultCategories);
-const [showAddModal, setShowAddModal] = useState(false);
-const [showCategoryModal, setShowCategoryModal] = useState(false);
-const [showSMSModal, setShowSMSModal] = useState(false);
-const [activeTab, setActiveTab] = useState(‘home’);
-const [transactionType, setTransactionType] = useState(‘expense’);
-const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
-const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-const [newTransaction, setNewTransaction] = useState({
-amount: ‘’,
-note: ‘’,
-category: ‘food’,
-paymentMode: ‘cash’,
-});
-const [newCategory, setNewCategory] = useState({ name: ‘’, icon: ‘other’, type: ‘expense’ });
-const [loading, setLoading] = useState(true);
-const [budget, setBudget] = useState(50000);
-const [chartView, setChartView] = useState(‘category’);
+// Format currency
+const formatCurrency = (amount) => '₹' + new Intl.NumberFormat('en-IN').format(Math.round(amount));
+const getMonthName = (month) => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][month];
 
-// SMS related states
-const [smsPermission, setSmsPermission] = useState(false);
-const [smsLoading, setSmsLoading] = useState(false);
-const [parsedSMS, setParsedSMS] = useState([]);
-const [selectedSMS, setSelectedSMS] = useState({});
-const [lastSyncDate, setLastSyncDate] = useState(null);
+// Sample transactions with SMS source
+const sampleTransactions = [
+  { id: 1, amount: 350, note: 'Swiggy - Biryani Paradise', category: 'food', paymentMode: 'upi', date: '2025-01-17', type: 'expense', source: 'sms' },
+  { id: 2, amount: 2500, note: 'HP Petrol Pump', category: 'fuel', paymentMode: 'debit', date: '2025-01-17', type: 'expense', source: 'sms' },
+  { id: 3, amount: 1299, note: 'Amazon - Headphones', category: 'shopping', paymentMode: 'credit', date: '2025-01-16', type: 'expense', source: 'sms' },
+  { id: 4, amount: 85000, note: 'January Salary - TCS', category: 'salary', paymentMode: 'netbanking', date: '2025-01-15', type: 'income', source: 'sms' },
+  { id: 5, amount: 499, note: 'Netflix Subscription', category: 'entertainment', paymentMode: 'credit', date: '2025-01-15', type: 'expense', source: 'sms' },
+  { id: 6, amount: 3500, note: 'BigBasket Groceries', category: 'groceries', paymentMode: 'upi', date: '2025-01-14', type: 'expense', source: 'manual' },
+  { id: 7, amount: 150, note: 'Auto Rickshaw', category: 'transport', paymentMode: 'cash', date: '2025-01-14', type: 'expense', source: 'manual' },
+  { id: 8, amount: 1800, note: 'Electricity Bill - TNEB', category: 'electricity', paymentMode: 'netbanking', date: '2025-01-13', type: 'expense', source: 'sms' },
+  { id: 9, amount: 599, note: 'Jio Recharge', category: 'mobile', paymentMode: 'upi', date: '2025-01-12', type: 'expense', source: 'sms' },
+  { id: 10, amount: 15000, note: 'EMI - HDFC Home Loan', category: 'emi', paymentMode: 'netbanking', date: '2025-01-10', type: 'expense', source: 'sms' },
+];
 
-// Load data with error handling
-useEffect(() => {
-loadData();
-}, []);
+// Sample SMS for import demo
+const sampleSMSToImport = [
+  { id: 101, merchant: 'Zomato - Dominos', amount: 599, type: 'expense', category: 'food', paymentMode: 'upi', date: '2025-01-17' },
+  { id: 102, merchant: 'PhonePe - Electricity', amount: 2100, type: 'expense', category: 'electricity', paymentMode: 'upi', date: '2025-01-17' },
+  { id: 103, merchant: 'IRCTC Refund', amount: 1250, type: 'income', category: 'refund', paymentMode: 'netbanking', date: '2025-01-16' },
+];
 
-// Save data
-useEffect(() => {
-if (!loading) {
-saveData();
-}
-}, [transactions, categories, budget, lastSyncDate]);
+// Donut Chart Component
+const DonutChart = ({ data, total }) => {
+  const size = 200;
+  const strokeWidth = 28;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const center = size / 2;
+  const colors = ['#FF6B8A', '#9B6BFF', '#6BAFFF', '#FFB86B', '#6BFF9B', '#FF6BDF', '#6BFFF0', '#FFE86B'];
 
-const loadData = async () => {
-try {
-const data = await AsyncStorage.getItem(‘moneyplus-data-v2’);
-if (data) {
-const parsed = JSON.parse(data);
-setTransactions(parsed.transactions || []);
-setBudget(parsed.budget || 50000);
-setLastSyncDate(parsed.lastSyncDate || null);
-if (parsed.categories?.length > 0) {
-setCategories(parsed.categories);
-}
-}
-} catch (e) {
-console.log(‘Error loading data:’, e);
-Alert.alert(‘Error’, ‘Failed to load data. Using defaults.’);
-} finally {
-setLoading(false);
-}
-};
+  let cumulativePercent = 0;
 
-const saveData = async () => {
-try {
-await AsyncStorage.setItem(‘moneyplus-data-v2’, JSON.stringify({
-transactions, categories, budget, lastSyncDate
-}));
-} catch (e) {
-console.log(‘Error saving data:’, e);
-}
-};
-
-// Request SMS permission
-const requestSMSPermission = async () => {
-if (Platform.OS !== ‘android’) {
-Alert.alert(‘Not Supported’, ‘SMS reading is only available on Android devices.’);
-return false;
-}
-
-```
-if (!SmsAndroid) {
-  Alert.alert('Not Available', 'SMS module is not available in this build.');
-  return false;
-}
-
-try {
-  const granted = await PermissionsAndroid.request(
-    PermissionsAndroid.PERMISSIONS.READ_SMS,
-    {
-      title: 'SMS Permission',
-      message: 'Money+ needs access to read your SMS to auto-detect bank transactions.',
-      buttonNeutral: 'Ask Me Later',
-      buttonNegative: 'Cancel',
-      buttonPositive: 'OK',
-    }
+  return (
+    <div style={{ position: 'relative', width: size, height: size, margin: '20px auto' }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={center} cy={center} r={radius} fill="none" stroke="#F5F5F5" strokeWidth={strokeWidth} />
+        {data.map((item, index) => {
+          const percentage = total > 0 ? (item.total / total) * 100 : 0;
+          const strokeDasharray = circumference;
+          const strokeDashoffset = circumference - (percentage / 100) * circumference;
+          const rotation = (cumulativePercent / 100) * 360;
+          cumulativePercent += percentage;
+          return (
+            <circle
+              key={item.id}
+              cx={center}
+              cy={center}
+              r={radius}
+              fill="none"
+              stroke={colors[index % colors.length]}
+              strokeWidth={strokeWidth}
+              strokeDasharray={strokeDasharray}
+              strokeDashoffset={strokeDashoffset}
+              style={{ transform: `rotate(${rotation}deg)`, transformOrigin: 'center' }}
+            />
+          );
+        })}
+      </svg>
+      <div style={{
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        textAlign: 'center',
+        background: '#fff',
+        borderRadius: '50%',
+        width: size - strokeWidth * 2 - 10,
+        height: size - strokeWidth * 2 - 10,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <div style={{ fontSize: '11px', color: '#B8B8D0' }}>Total Expenses</div>
+        <div style={{ fontSize: '20px', fontWeight: '800', color: '#5A5A7A' }}>{formatCurrency(total)}</div>
+      </div>
+    </div>
   );
-  
-  if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-    setSmsPermission(true);
-    return true;
-  } else {
-    Alert.alert('Permission Denied', 'SMS permission is required to read bank messages.');
-    return false;
-  }
-} catch (err) {
-  console.warn(err);
-  Alert.alert('Error', 'Failed to request SMS permission.');
-  return false;
-}
-```
-
 };
 
-// Read SMS messages
-const readSMSMessages = async () => {
-if (!SmsAndroid) {
-Alert.alert(‘Not Available’, ‘SMS reading is not available in this build.’);
-return;
-}
+export default function MoneyPlusTracker() {
+  const [transactions, setTransactions] = useState(sampleTransactions);
+  const [categories] = useState(defaultCategories);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editTransaction, setEditTransaction] = useState(null);
+  const [showSMSModal, setShowSMSModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('home');
+  const [transactionType, setTransactionType] = useState('expense');
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [newTransaction, setNewTransaction] = useState({ amount: '', note: '', category: 'food', paymentMode: 'upi' });
+  const [budget] = useState(50000);
+  const [chartView, setChartView] = useState('category');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [detailView, setDetailView] = useState(null);
+  const [smsLoading, setSmsLoading] = useState(false);
+  const [selectedSMS, setSelectedSMS] = useState({});
+  const [lastSyncDate] = useState('17 Jan 2025');
 
-```
-setSmsLoading(true);
-try {
-  const hasPermission = smsPermission || await requestSMSPermission();
-  if (!hasPermission) {
-    setSmsLoading(false);
-    return;
-  }
+  const colors = ['#FF6B8A', '#9B6BFF', '#6BAFFF', '#FFB86B', '#6BFF9B', '#FF6BDF'];
 
-  const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-  
-  const filter = {
-    box: 'inbox',
-    minDate: thirtyDaysAgo,
-    maxCount: 100,
+  const monthTransactions = transactions.filter(t => {
+    const d = new Date(t.date);
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
+
+  const filteredTransactions = searchQuery
+    ? monthTransactions.filter(t => t.note.toLowerCase().includes(searchQuery.toLowerCase()))
+    : monthTransactions;
+
+  const totalIncome = monthTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+  const totalExpense = monthTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+  const balance = totalIncome - totalExpense;
+
+  const categoryStats = categories
+    .filter(c => c.type === 'expense')
+    .map(cat => ({
+      ...cat,
+      total: monthTransactions.filter(t => t.category === cat.id && t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
+    }))
+    .filter(c => c.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  const paymentStats = paymentModes.map(mode => ({
+    ...mode,
+    total: monthTransactions.filter(t => t.paymentMode === mode.id && t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
+  })).filter(p => p.total > 0);
+
+  const groupByDate = (txns) => {
+    const groups = {};
+    txns.forEach(t => {
+      if (!groups[t.date]) groups[t.date] = [];
+      groups[t.date].push(t);
+    });
+    return Object.keys(groups)
+      .sort((a, b) => new Date(b) - new Date(a))
+      .map(date => ({
+        date,
+        transactions: groups[date],
+        totalExpense: groups[date].filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
+        totalIncome: groups[date].filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0),
+      }));
   };
 
-  SmsAndroid.list(
-    JSON.stringify(filter),
-    (fail) => {
-      console.log('Failed to list SMS:', fail);
-      Alert.alert('Error', 'Failed to read SMS messages.');
+  const formatDateHeader = (dateStr) => {
+    const date = new Date(dateStr);
+    const today = new Date();
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  };
+
+  const prevMonth = () => {
+    if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(currentYear - 1); }
+    else setCurrentMonth(currentMonth - 1);
+  };
+
+  const nextMonth = () => {
+    if (currentMonth === 11) { setCurrentMonth(0); setCurrentYear(currentYear + 1); }
+    else setCurrentMonth(currentMonth + 1);
+  };
+
+  const addTransaction = () => {
+    const amount = parseFloat(newTransaction.amount);
+    if (!amount || amount <= 0) return alert('Enter valid amount');
+    const cat = categories.find(c => c.id === newTransaction.category);
+    setTransactions(prev => [{
+      id: Date.now(),
+      amount,
+      note: newTransaction.note || cat?.name || 'Transaction',
+      category: newTransaction.category,
+      paymentMode: newTransaction.paymentMode,
+      date: new Date().toISOString().split('T')[0],
+      type: transactionType,
+      source: 'manual',
+    }, ...prev]);
+    setNewTransaction({ amount: '', note: '', category: transactionType === 'income' ? 'salary' : 'food', paymentMode: 'upi' });
+    setShowAddModal(false);
+  };
+
+  const deleteTransaction = (id) => {
+    if (confirm('Delete this transaction?')) {
+      setTransactions(prev => prev.filter(t => t.id !== id));
+    }
+  };
+
+  const openEditModal = (t) => {
+    setEditTransaction({ ...t, amount: t.amount.toString() });
+    setShowEditModal(true);
+  };
+
+  const saveEditedTransaction = () => {
+    if (!editTransaction) return;
+    const amount = parseFloat(editTransaction.amount);
+    if (!amount || amount <= 0) return alert('Enter valid amount');
+    setTransactions(prev => prev.map(t => 
+      t.id === editTransaction.id 
+        ? { ...t, amount, note: editTransaction.note, category: editTransaction.category, paymentMode: editTransaction.paymentMode }
+        : t
+    ));
+    setShowEditModal(false);
+    setEditTransaction(null);
+  };
+
+  const syncSMS = () => {
+    setSmsLoading(true);
+    setTimeout(() => {
       setSmsLoading(false);
-    },
-    (count, smsList) => {
-      const messages = JSON.parse(smsList);
-      const bankMessages = messages.filter(msg => 
-        isBankSender && isBankSender(msg.address)
-      );
-
-      const parsed = bankMessages
-        .map(msg => {
-          const transaction = parseSMS ? parseSMS(msg.body) : null;
-          if (transaction) {
-            return {
-              ...transaction,
-              smsId: msg._id,
-              date: new Date(parseInt(msg.date)),
-              sender: msg.address,
-            };
-          }
-          return null;
-        })
-        .filter(Boolean)
-        .sort((a, b) => b.date - a.date);
-
-      setParsedSMS(parsed);
-      setLastSyncDate(new Date());
       setShowSMSModal(true);
-      setSmsLoading(false);
-    }
-  );
-} catch (error) {
-  console.log('Error reading SMS:', error);
-  Alert.alert('Error', 'Failed to read SMS messages.');
-  setSmsLoading(false);
-}
-```
-
-};
-
-// Helper functions
-const formatCurrency = (amount) => {
-return `₹${Math.abs(amount).toLocaleString('en-IN')}`;
-};
-
-const getMonthName = (month) => {
-const months = [‘January’, ‘February’, ‘March’, ‘April’, ‘May’, ‘June’,
-‘July’, ‘August’, ‘September’, ‘October’, ‘November’, ‘December’];
-return months[month];
-};
-
-const prevMonth = () => {
-if (currentMonth === 0) {
-setCurrentMonth(11);
-setCurrentYear(currentYear - 1);
-} else {
-setCurrentMonth(currentMonth - 1);
-}
-};
-
-const nextMonth = () => {
-const today = new Date();
-if (currentMonth === today.getMonth() && currentYear === today.getFullYear()) return;
-
-```
-if (currentMonth === 11) {
-  setCurrentMonth(0);
-  setCurrentYear(currentYear + 1);
-} else {
-  setCurrentMonth(currentMonth + 1);
-}
-```
-
-};
-
-// Filter transactions
-const filteredTransactions = transactions.filter(t => {
-const date = new Date(t.date);
-return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
-});
-
-const totalIncome = filteredTransactions
-.filter(t => t.type === ‘income’)
-.reduce((sum, t) => sum + t.amount, 0);
-
-const totalExpense = filteredTransactions
-.filter(t => t.type === ‘expense’)
-.reduce((sum, t) => sum + t.amount, 0);
-
-const balance = totalIncome - totalExpense;
-
-// Category statistics
-const getCategoryStats = () => {
-const stats = {};
-filteredTransactions
-.filter(t => t.type === transactionType)
-.forEach(t => {
-if (!stats[t.category]) {
-stats[t.category] = { amount: 0, count: 0 };
-}
-stats[t.category].amount += t.amount;
-stats[t.category].count += 1;
-});
-
-```
-return Object.entries(stats)
-  .map(([cat, data]) => ({ category: cat, ...data }))
-  .sort((a, b) => b.amount - a.amount);
-```
-
-};
-
-const categoryStats = getCategoryStats();
-const totalAmount = categoryStats.reduce((sum, s) => sum + s.amount, 0);
-
-// Add transaction
-const addTransaction = () => {
-if (!newTransaction.amount || isNaN(parseFloat(newTransaction.amount))) {
-Alert.alert(‘Invalid Amount’, ‘Please enter a valid amount.’);
-return;
-}
-
-```
-const transaction = {
-  id: Date.now().toString(),
-  type: transactionType,
-  amount: parseFloat(newTransaction.amount),
-  note: newTransaction.note || 'No note',
-  category: newTransaction.category,
-  paymentMode: newTransaction.paymentMode,
-  date: new Date().toISOString(),
-};
-
-setTransactions([transaction, ...transactions]);
-setNewTransaction({ amount: '', note: '', category: 'food', paymentMode: 'cash' });
-setShowAddModal(false);
-```
-
-};
-
-// Add SMS transactions
-const addSMSTransactions = () => {
-const selected = Object.keys(selectedSMS).filter(id => selectedSMS[id]);
-if (selected.length === 0) {
-Alert.alert(‘No Selection’, ‘Please select at least one transaction to add.’);
-return;
-}
-
-```
-const newTrans = selected.map(id => {
-  const sms = parsedSMS.find(s => s.smsId === id);
-  return {
-    id: Date.now().toString() + Math.random(),
-    type: sms.type,
-    amount: sms.amount,
-    note: sms.merchant || 'SMS Transaction',
-    category: sms.type === 'expense' ? 'food' : 'salary',
-    paymentMode: 'upi',
-    date: sms.date.toISOString(),
+    }, 1500);
   };
-});
 
-setTransactions([...newTrans, ...transactions]);
-setSelectedSMS({});
-setShowSMSModal(false);
-Alert.alert('Success', `Added ${newTrans.length} transaction(s) from SMS.`);
-```
+  const toggleSMSSelection = (id) => {
+    setSelectedSMS(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
-};
+  const selectAllSMS = () => {
+    const allSelected = sampleSMSToImport.every(sms => selectedSMS[sms.id]);
+    if (allSelected) {
+      setSelectedSMS({});
+    } else {
+      const newSelected = {};
+      sampleSMSToImport.forEach(sms => { newSelected[sms.id] = true; });
+      setSelectedSMS(newSelected);
+    }
+  };
 
-// Add category
-const addCategory = () => {
-if (!newCategory.name.trim()) {
-Alert.alert(‘Invalid Name’, ‘Please enter a category name.’);
-return;
-}
+  const importSelectedSMS = () => {
+    const selected = sampleSMSToImport.filter(sms => selectedSMS[sms.id]);
+    if (selected.length === 0) return alert('Select at least one transaction');
+    const newTxns = selected.map(sms => ({
+      id: Date.now() + Math.random(),
+      amount: sms.amount,
+      note: sms.merchant,
+      category: sms.category,
+      paymentMode: sms.paymentMode,
+      date: sms.date,
+      type: sms.type,
+      source: 'sms',
+    }));
+    setTransactions(prev => [...newTxns, ...prev]);
+    setShowSMSModal(false);
+    setSelectedSMS({});
+    alert(`${selected.length} transactions imported!`);
+  };
 
-```
-const category = {
-  id: newCategory.name.toLowerCase().replace(/\s+/g, '-'),
-  name: newCategory.name,
-  icon: newCategory.icon,
-  type: newCategory.type,
-};
+  const getDetailTransactions = () => {
+    if (!detailView) return [];
+    if (detailView.type === 'category') {
+      return monthTransactions.filter(t => t.category === detailView.id && t.type === 'expense');
+    }
+    return monthTransactions.filter(t => t.paymentMode === detailView.id && t.type === 'expense');
+  };
 
-setCategories([...categories, category]);
-setNewCategory({ name: '', icon: 'other', type: 'expense' });
-setShowCategoryModal(false);
-```
+  return (
+    <div style={styles.container}>
+      {/* Background decorations */}
+      <div style={styles.bgDecor1} />
+      <div style={styles.bgDecor2} />
 
-};
+      {/* Header */}
+      <header style={styles.header}>
+        <h1 style={styles.appTitle}>💰 Money+</h1>
+        <div style={styles.monthSelector}>
+          <button style={styles.monthBtn} onClick={prevMonth}><ChevronLeft size={18} /></button>
+          <span style={styles.monthText}>{getMonthName(currentMonth).slice(0, 3)} {currentYear}</span>
+          <button style={styles.monthBtn} onClick={nextMonth}><ChevronRight size={18} /></button>
+        </div>
+      </header>
 
-// Delete transaction
-const deleteTransaction = (id) => {
-Alert.alert(
-‘Delete Transaction’,
-‘Are you sure you want to delete this transaction?’,
-[
-{ text: ‘Cancel’, style: ‘cancel’ },
-{ text: ‘Delete’, style: ‘destructive’, onPress: () => {
-setTransactions(transactions.filter(t => t.id !== id));
-}}
-]
-);
-};
+      {/* Main Content */}
+      <main style={styles.main}>
+        {/* HOME TAB */}
+        {activeTab === 'home' && (
+          <>
+            {/* Balance Card */}
+            <div style={styles.balanceCard}>
+              <div style={styles.balanceLabel}>Total Balance</div>
+              <div style={styles.balanceAmount}>{formatCurrency(balance)}</div>
+              <div style={styles.balanceRow}>
+                <div style={styles.incomeBox}>
+                  <TrendingUp size={16} color="#4CAF50" />
+                  <div>
+                    <div style={styles.miniLabel}>Income</div>
+                    <div style={styles.incomeAmount}>{formatCurrency(totalIncome)}</div>
+                  </div>
+                </div>
+                <div style={styles.expenseBox}>
+                  <TrendingDown size={16} color="#FF6B8A" />
+                  <div>
+                    <div style={styles.miniLabel}>Expense</div>
+                    <div style={styles.expenseAmount}>{formatCurrency(totalExpense)}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-const colors = [’#FF6B8A’, ‘#9B6BFF’, ‘#6BAFFF’, ‘#FFB86B’, ‘#6BFF9B’, ‘#FF6BDF’];
+            {/* SMS Sync Button */}
+            <button style={styles.syncButton} onClick={syncSMS} disabled={smsLoading}>
+              {smsLoading ? (
+                <RefreshCw size={18} color="#FF9BB3" style={{ animation: 'spin 1s linear infinite' }} />
+              ) : (
+                <Smartphone size={18} color="#FF9BB3" />
+              )}
+              <span style={styles.syncButtonText}>
+                {smsLoading ? 'Scanning SMS...' : 'Sync Bank SMS'}
+              </span>
+              <span style={styles.syncDate}>Last: {lastSyncDate}</span>
+            </button>
 
-if (loading) {
-return (
-<View style={styles.loadingContainer}>
-<Text style={styles.loadingIcon}>🌸</Text>
-<Text style={styles.loadingText}>Loading…</Text>
-</View>
-);
-}
+            {/* Budget Progress */}
+            <div style={styles.budgetSection}>
+              <div style={styles.budgetHeader}>
+                <span style={styles.budgetTitle}>Monthly Budget</span>
+                <span style={styles.budgetValue}>{formatCurrency(totalExpense)} / {formatCurrency(budget)}</span>
+              </div>
+              <div style={styles.budgetTrack}>
+                <div style={{
+                  ...styles.budgetFill,
+                  width: `${Math.min((totalExpense / budget) * 100, 100)}%`,
+                  background: totalExpense > budget ? '#FF6B6B' : totalExpense > budget * 0.8 ? '#FFB347' : '#4CAF50'
+                }} />
+              </div>
+              <div style={styles.budgetRemaining}>
+                {totalExpense > budget
+                  ? <span style={{ color: '#FF6B6B' }}>⚠️ Over budget by {formatCurrency(totalExpense - budget)}</span>
+                  : <span style={{ color: '#4CAF50' }}>✓ {formatCurrency(budget - totalExpense)} remaining</span>
+                }
+              </div>
+            </div>
 
-return (
-<SafeAreaView style={styles.container}>
-<StatusBar barStyle="dark-content" backgroundColor="#FFF9FC" />
+            {/* Payment Mode Summary */}
+            <div style={styles.paymentSummary}>
+              {paymentModes.slice(0, 4).map(mode => {
+                const modeTotal = monthTransactions.filter(t => t.paymentMode === mode.id && t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+                return (
+                  <div key={mode.id} style={styles.paymentModeCard}>
+                    <span style={{ fontSize: '20px' }}>{mode.emoji}</span>
+                    <span style={styles.paymentModeName}>{mode.name.split(' ')[0]}</span>
+                    <span style={styles.paymentModeAmount}>{formatCurrency(modeTotal)}</span>
+                  </div>
+                );
+              })}
+            </div>
 
-```
-  {/* Header */}
-  <View style={styles.header}>
-    <Text style={styles.appTitle}>💰 Money+</Text>
-    <View style={styles.monthSelector}>
-      <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}>
-        <Ionicons name="chevron-back" size={20} color="#FF9BB3" />
-      </TouchableOpacity>
-      <Text style={styles.monthText}>{getMonthName(currentMonth).slice(0, 3)} {currentYear}</Text>
-      <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}>
-        <Ionicons name="chevron-forward" size={20} color="#FF9BB3" />
-      </TouchableOpacity>
-    </View>
-  </View>
+            {/* Search */}
+            <div style={styles.searchBox}>
+              <Search size={18} color="#B8B8D0" />
+              <input
+                type="text"
+                placeholder="Search transactions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={styles.searchInput}
+              />
+            </div>
 
-  <ScrollView style={styles.main} showsVerticalScrollIndicator={false}>
-    {/* Home Tab */}
-    {activeTab === 'home' && (
-      <>
-        {/* Balance Card */}
-        <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Total Balance</Text>
-          <Text style={styles.balanceAmount}>{formatCurrency(balance)}</Text>
-          <View style={styles.balanceRow}>
-            <View style={styles.incomeBox}>
-              <Ionicons name="trending-up" size={18} color="#4CAF50" />
-              <View>
-                <Text style={styles.miniLabel}>Income</Text>
-                <Text style={styles.incomeAmount}>{formatCurrency(totalIncome)}</Text>
-              </View>
-            </View>
-            <View style={styles.expenseBox}>
-              <Ionicons name="trending-down" size={18} color="#FF6B8A" />
-              <View>
-                <Text style={styles.miniLabel}>Expense</Text>
-                <Text style={styles.expenseAmount}>{formatCurrency(totalExpense)}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <TouchableOpacity 
-            style={styles.actionBtn}
-            onPress={() => { setTransactionType('expense'); setShowAddModal(true); }}
-          >
-            <View style={[styles.actionIcon, { backgroundColor: '#FFEBEF' }]}>
-              <Ionicons name="remove" size={24} color="#FF6B8A" />
-            </View>
-            <Text style={styles.actionText}>Add Expense</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.actionBtn}
-            onPress={() => { setTransactionType('income'); setShowAddModal(true); }}
-          >
-            <View style={[styles.actionIcon, { backgroundColor: '#E8F5E9' }]}>
-              <Ionicons name="add" size={24} color="#4CAF50" />
-            </View>
-            <Text style={styles.actionText}>Add Income</Text>
-          </TouchableOpacity>
-          
-          {Platform.OS === 'android' && SmsAndroid && (
-            <TouchableOpacity 
-              style={styles.actionBtn}
-              onPress={readSMSMessages}
-              disabled={smsLoading}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#F3E5F5' }]}>
-                {smsLoading ? (
-                  <ActivityIndicator size="small" color="#9C27B0" />
-                ) : (
-                  <Ionicons name="mail" size={24} color="#9C27B0" />
-                )}
-              </View>
-              <Text style={styles.actionText}>Sync SMS</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Recent Transactions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Transactions</Text>
-          {filteredTransactions.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>📝</Text>
-              <Text style={styles.emptyText}>No transactions yet</Text>
-              <Text style={styles.emptyHint}>Add your first transaction to get started</Text>
-            </View>
-          ) : (
-            filteredTransactions.slice(0, 10).map(transaction => {
-              const cat = categories.find(c => c.id === transaction.category);
-              const icon = iconLibrary[cat?.icon || 'other'];
-              
-              return (
-                <TouchableOpacity
-                  key={transaction.id}
-                  style={styles.transactionItem}
-                  onLongPress={() => deleteTransaction(transaction.id)}
-                >
-                  <View style={[styles.transIcon, { backgroundColor: icon.bg }]}>
-                    <Text style={styles.transEmoji}>{icon.emoji}</Text>
-                  </View>
-                  <View style={styles.transInfo}>
-                    <Text style={styles.transTitle}>{cat?.name || 'Other'}</Text>
-                    <Text style={styles.transNote}>{transaction.note}</Text>
-                    <Text style={styles.transDate}>
-                      {new Date(transaction.date).toLocaleDateString('en-IN', { 
-                        day: 'numeric', month: 'short' 
-                      })}
-                    </Text>
-                  </View>
-                  <Text style={[
-                    styles.transAmount,
-                    transaction.type === 'income' ? styles.incomeText : styles.expenseText
-                  ]}>
-                    {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </View>
-      </>
-    )}
-
-    {/* Analytics Tab */}
-    {activeTab === 'analytics' && (
-      <>
-        <View style={styles.tabSelector}>
-          <TouchableOpacity
-            style={[styles.tabBtn, transactionType === 'expense' && styles.tabBtnActive]}
-            onPress={() => setTransactionType('expense')}
-          >
-            <Text style={[styles.tabBtnText, transactionType === 'expense' && styles.tabBtnTextActive]}>
-              Expenses
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabBtn, transactionType === 'income' && styles.tabBtnActive]}
-            onPress={() => setTransactionType('income')}
-          >
-            <Text style={[styles.tabBtnText, transactionType === 'income' && styles.tabBtnTextActive]}>
-              Income
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Donut Chart */}
-        <View style={styles.chartContainer}>
-          <Text style={styles.chartTitle}>
-            {transactionType === 'expense' ? 'Expense' : 'Income'} by Category
-          </Text>
-          
-          {categoryStats.length === 0 ? (
-            <View style={styles.emptyChart}>
-              <Text style={styles.emptyIcon}>📊</Text>
-              <Text style={styles.emptyText}>No data available</Text>
-            </View>
-          ) : (
-            <>
-              <View style={styles.donutContainer}>
-                <Svg width={200} height={200}>
-                  {categoryStats.map((stat, index) => {
-                    const percentage = (stat.amount / totalAmount) * 100;
-                    const angle = (percentage / 100) * 360;
-                    const prevAngles = categoryStats
-                      .slice(0, index)
-                      .reduce((sum, s) => sum + ((s.amount / totalAmount) * 360), 0);
-                    
-                    const startAngle = prevAngles - 90;
-                    const endAngle = startAngle + angle;
-                    
-                    const radius = 80;
-                    const innerRadius = 50;
-                    
-                    const startX = 100 + radius * Math.cos((startAngle * Math.PI) / 180);
-                    const startY = 100 + radius * Math.sin((startAngle * Math.PI) / 180);
-                    const endX = 100 + radius * Math.cos((endAngle * Math.PI) / 180);
-                    const endY = 100 + radius * Math.sin((endAngle * Math.PI) / 180);
-                    
-                    const largeArc = angle > 180 ? 1 : 0;
-                    
-                    const innerStartX = 100 + innerRadius * Math.cos((startAngle * Math.PI) / 180);
-                    const innerStartY = 100 + innerRadius * Math.sin((startAngle * Math.PI) / 180);
-                    const innerEndX = 100 + innerRadius * Math.cos((endAngle * Math.PI) / 180);
-                    const innerEndY = 100 + innerRadius * Math.sin((endAngle * Math.PI) / 180);
-                    
-                    const pathData = [
-                      `M ${startX} ${startY}`,
-                      `A ${radius} ${radius} 0 ${largeArc} 1 ${endX} ${endY}`,
-                      `L ${innerEndX} ${innerEndY}`,
-                      `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${innerStartX} ${innerStartY}`,
-                      'Z'
-                    ].join(' ');
-                    
+            {/* Transactions */}
+            <div style={styles.sectionTitle}>Recent Transactions</div>
+            {filteredTransactions.length === 0 ? (
+              <div style={styles.emptyState}>
+                <div style={styles.emptyEmoji}>📝</div>
+                <p style={styles.emptyText}>No transactions yet!</p>
+                <p style={styles.emptySubtext}>Tap + or sync SMS to add</p>
+              </div>
+            ) : (
+              groupByDate(filteredTransactions).map((group) => (
+                <div key={group.date} style={styles.dateGroup}>
+                  <div style={styles.dateHeader}>
+                    <span style={styles.dateHeaderText}>{formatDateHeader(group.date)}</span>
+                    <span style={styles.dateHeaderAmount}>
+                      {group.totalExpense > 0 && <span style={{ color: '#FF6B8A' }}>-{formatCurrency(group.totalExpense)}</span>}
+                      {group.totalExpense > 0 && group.totalIncome > 0 && ' / '}
+                      {group.totalIncome > 0 && <span style={{ color: '#4CAF50' }}>+{formatCurrency(group.totalIncome)}</span>}
+                    </span>
+                  </div>
+                  {group.transactions.map((t) => {
+                    const cat = categories.find(c => c.id === t.category) || categories[0];
+                    const iconData = iconLibrary[cat.icon] || iconLibrary.other;
+                    const payMode = paymentModes.find(p => p.id === t.paymentMode) || paymentModes[0];
                     return (
-                      <Path
-                        key={stat.category}
-                        d={pathData}
-                        fill={colors[index % colors.length]}
-                      />
+                      <div key={t.id} style={{ ...styles.transactionItem, cursor: 'pointer' }} onClick={() => openEditModal(t)}>
+                        <div style={{ ...styles.transactionIcon, background: iconData.bg }}>
+                          <span style={{ fontSize: '22px' }}>{iconData.emoji}</span>
+                        </div>
+                        <div style={styles.transactionInfo}>
+                          <span style={styles.transactionNote}>{t.note}</span>
+                          <div style={styles.transactionMeta}>
+                            <span style={{ ...styles.paymentBadge, background: payMode.bg, color: payMode.color }}>
+                              {payMode.emoji} {payMode.name.split(' ')[0]}
+                            </span>
+                            {t.source === 'sms' && (
+                              <span style={styles.smsBadge}>📱 Auto</span>
+                            )}
+                            <span style={styles.categoryLabel}>{cat.name}</span>
+                          </div>
+                        </div>
+                        <div style={styles.transactionRight}>
+                          <span style={{ ...styles.transactionAmount, color: t.type === 'income' ? '#4CAF50' : '#FF6B8A' }}>
+                            {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                          </span>
+                          <button style={{ ...styles.deleteBtn, cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); deleteTransaction(t.id); }}>
+                            <Trash2 size={14} color="#FF6B8A" />
+                          </button>
+                        </div>
+                      </div>
                     );
                   })}
-                </Svg>
-                <View style={styles.donutCenter}>
-                  <Text style={styles.donutTotal}>{formatCurrency(totalAmount)}</Text>
-                  <Text style={styles.donutLabel}>Total</Text>
-                </View>
-              </View>
+                </div>
+              ))
+            )}
+          </>
+        )}
 
-              <View style={styles.legend}>
-                {categoryStats.map((stat, index) => {
-                  const cat = categories.find(c => c.id === stat.category);
-                  const percentage = ((stat.amount / totalAmount) * 100).toFixed(1);
-                  
+        {/* CHARTS TAB */}
+        {activeTab === 'charts' && (
+          <>
+            {detailView ? (
+              <div>
+                <div style={styles.detailHeader}>
+                  <button style={styles.backBtn} onClick={() => setDetailView(null)}>
+                    <ChevronLeft size={24} color="#5A5A7A" />
+                  </button>
+                  <div style={{
+                    width: '44px', height: '44px', borderRadius: '12px',
+                    background: detailView.type === 'category'
+                      ? (iconLibrary[detailView.icon]?.bg || '#f5f5f5')
+                      : (detailView.bg || '#f5f5f5'),
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}>
+                    <span style={{ fontSize: '22px' }}>
+                      {detailView.type === 'category'
+                        ? (iconLibrary[detailView.icon]?.emoji || '📦')
+                        : (detailView.emoji || '💳')}
+                    </span>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '18px', fontWeight: '700', color: '#5A5A7A' }}>{detailView.name}</div>
+                    <div style={{ fontSize: '12px', color: '#B8B8D0' }}>
+                      {detailView.type === 'category' ? 'Category' : 'Payment Mode'} Details
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{
+                  background: detailView.type === 'category'
+                    ? (iconLibrary[detailView.icon]?.bg || '#f5f5f5')
+                    : (detailView.bg || '#f5f5f5'),
+                  borderRadius: '20px', padding: '24px', marginBottom: '24px', textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '13px', color: '#888', marginBottom: '6px' }}>Total Spent</div>
+                  <div style={{ fontSize: '36px', fontWeight: '800', color: '#5A5A7A' }}>
+                    {formatCurrency(getDetailTransactions().reduce((s, t) => s + t.amount, 0))}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#888', marginTop: '6px' }}>
+                    {getDetailTransactions().length} transactions this month
+                  </div>
+                </div>
+
+                <div style={styles.sectionTitle}>All Transactions</div>
+                {getDetailTransactions().length === 0 ? (
+                  <div style={styles.emptyState}>
+                    <div style={styles.emptyEmoji}>📭</div>
+                    <p style={styles.emptyText}>No transactions</p>
+                  </div>
+                ) : (
+                  groupByDate(getDetailTransactions()).map((group) => (
+                    <div key={group.date} style={styles.dateGroup}>
+                      <div style={styles.dateHeader}>
+                        <span style={styles.dateHeaderText}>{formatDateHeader(group.date)}</span>
+                        <span style={{ ...styles.dateHeaderAmount, color: '#FF6B8A' }}>-{formatCurrency(group.totalExpense)}</span>
+                      </div>
+                      {group.transactions.map(t => {
+                        const cat = categories.find(c => c.id === t.category) || categories[0];
+                        const iconData = iconLibrary[cat.icon] || iconLibrary.other;
+                        const payMode = paymentModes.find(p => p.id === t.paymentMode) || paymentModes[0];
+                        return (
+                          <div key={t.id} style={{ ...styles.transactionItem, cursor: 'pointer' }} onClick={() => openEditModal(t)}>
+                            <div style={{ ...styles.transactionIcon, background: iconData.bg }}>
+                              <span style={{ fontSize: '22px' }}>{iconData.emoji}</span>
+                            </div>
+                            <div style={styles.transactionInfo}>
+                              <span style={styles.transactionNote}>{t.note}</span>
+                              <div style={styles.transactionMeta}>
+                                <span style={{ ...styles.paymentBadge, background: payMode.bg, color: payMode.color }}>
+                                  {payMode.emoji} {payMode.name.split(' ')[0]}
+                                </span>
+                              </div>
+                            </div>
+                            <span style={{ ...styles.transactionAmount, color: '#FF6B8A' }}>-{formatCurrency(t.amount)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <>
+                <div style={styles.chartToggle}>
+                  <button
+                    style={{ ...styles.chartToggleBtn, background: chartView === 'category' ? '#FF9BB3' : '#f5f5f5', color: chartView === 'category' ? '#fff' : '#666' }}
+                    onClick={() => setChartView('category')}
+                  >
+                    📁 By Category
+                  </button>
+                  <button
+                    style={{ ...styles.chartToggleBtn, background: chartView === 'payment' ? '#FF9BB3' : '#f5f5f5', color: chartView === 'payment' ? '#fff' : '#666' }}
+                    onClick={() => setChartView('payment')}
+                  >
+                    💳 By Payment
+                  </button>
+                </div>
+
+                {chartView === 'category' ? (
+                  categoryStats.length > 0 ? (
+                    <>
+                      <DonutChart data={categoryStats} total={totalExpense} />
+                      {categoryStats.map((cat, index) => {
+                        const iconData = iconLibrary[cat.icon] || iconLibrary.other;
+                        const percentage = totalExpense > 0 ? ((cat.total / totalExpense) * 100).toFixed(0) : 0;
+                        return (
+                          <div
+                            key={cat.id}
+                            style={styles.statsItem}
+                            onClick={() => setDetailView({ type: 'category', id: cat.id, name: cat.name, icon: cat.icon })}
+                          >
+                            <div style={{ ...styles.statsIcon, background: iconData.bg }}>
+                              <span style={{ fontSize: '20px' }}>{iconData.emoji}</span>
+                            </div>
+                            <div style={styles.statsInfo}>
+                              <span style={styles.statsName}>{cat.name}</span>
+                              <div style={styles.statsBar}>
+                                <div style={{ ...styles.statsBarFill, width: `${percentage}%`, background: colors[index % colors.length] }} />
+                              </div>
+                            </div>
+                            <div style={styles.statsRight}>
+                              <span style={{ ...styles.statsPercent, color: colors[index % colors.length] }}>{percentage}%</span>
+                              <span style={styles.statsAmount}>{formatCurrency(cat.total)}</span>
+                            </div>
+                            <ChevronRight size={16} color="#ccc" />
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <div style={styles.emptyState}>
+                      <div style={styles.emptyEmoji}>📊</div>
+                      <p style={styles.emptyText}>No expense data</p>
+                    </div>
+                  )
+                ) : (
+                  paymentStats.length > 0 ? (
+                    <>
+                      <div style={styles.paymentChartHeader}>
+                        <span>Payment Mode Analysis</span>
+                        <span style={{ fontSize: '12px', color: '#888' }}>Total: {formatCurrency(totalExpense)}</span>
+                      </div>
+                      {paymentStats.map((mode, index) => {
+                        const percentage = totalExpense > 0 ? ((mode.total / totalExpense) * 100).toFixed(0) : 0;
+                        return (
+                          <div
+                            key={mode.id}
+                            style={styles.statsItem}
+                            onClick={() => setDetailView({ type: 'payment', id: mode.id, name: mode.name, emoji: mode.emoji, color: mode.color, bg: mode.bg })}
+                          >
+                            <div style={{ ...styles.statsIcon, background: mode.bg }}>
+                              <span style={{ fontSize: '24px' }}>{mode.emoji}</span>
+                            </div>
+                            <div style={styles.statsInfo}>
+                              <span style={styles.statsName}>{mode.name}</span>
+                              <div style={styles.statsBar}>
+                                <div style={{ ...styles.statsBarFill, width: `${percentage}%`, background: mode.color }} />
+                              </div>
+                            </div>
+                            <div style={styles.statsRight}>
+                              <span style={{ ...styles.statsPercent, color: mode.color }}>{percentage}%</span>
+                              <span style={styles.statsAmount}>{formatCurrency(mode.total)}</span>
+                            </div>
+                            <ChevronRight size={16} color="#ccc" />
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <div style={styles.emptyState}>
+                      <div style={styles.emptyEmoji}>💳</div>
+                      <p style={styles.emptyText}>No payment data</p>
+                    </div>
+                  )
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {/* SETTINGS TAB */}
+        {activeTab === 'settings' && (
+          <>
+            {/* SMS Section */}
+            <div style={styles.settingsSection}>
+              <div style={styles.settingsSectionTitle}>📱 SMS Auto-Sync</div>
+              <div style={styles.settingsItem} onClick={syncSMS}>
+                <RefreshCw size={24} color="#FF9BB3" />
+                <div style={styles.settingsItemInfo}>
+                  <div style={styles.settingsItemTitle}>Sync Bank SMS</div>
+                  <div style={styles.settingsItemDesc}>Import transactions from bank messages</div>
+                </div>
+                <ChevronRight size={20} color="#ccc" />
+              </div>
+              <div style={styles.settingsItem}>
+                <Clock size={24} color="#9B6BFF" />
+                <div style={styles.settingsItemInfo}>
+                  <div style={styles.settingsItemTitle}>Last Synced</div>
+                  <div style={styles.settingsItemDesc}>{lastSyncDate}, 10:30 AM</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Budget Section */}
+            <div style={styles.settingsSection}>
+              <div style={styles.settingsSectionTitle}>🎯 Budget Settings</div>
+              <div style={styles.budgetSetting}>
+                <span style={styles.settingLabel}>Monthly Budget</span>
+                <div style={styles.budgetInputRow}>
+                  <span style={styles.rupeeSign}>₹</span>
+                  <input type="text" value="50,000" style={styles.budgetInputField} readOnly />
+                </div>
+              </div>
+            </div>
+
+            {/* Categories Section */}
+            <div style={styles.settingsSection}>
+              <div style={styles.catHeader}>
+                <div style={styles.settingsSectionTitle}>📁 Categories</div>
+                <button style={styles.addCatBtn}>
+                  <Plus size={18} color="#FF9BB3" />
+                </button>
+              </div>
+              <div style={styles.catGrid}>
+                {categories.filter(c => c.type === 'expense').slice(0, 8).map(cat => {
+                  const iconData = iconLibrary[cat.icon] || iconLibrary.other;
                   return (
-                    <View key={stat.category} style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: colors[index % colors.length] }]} />
-                      <Text style={styles.legendText}>{cat?.name || 'Other'}</Text>
-                      <Text style={styles.legendPercent}>{percentage}%</Text>
-                      <Text style={styles.legendAmount}>{formatCurrency(stat.amount)}</Text>
-                    </View>
+                    <div key={cat.id} style={styles.catItem}>
+                      <div style={{ ...styles.catIcon, background: iconData.bg }}>
+                        <span style={{ fontSize: '24px' }}>{iconData.emoji}</span>
+                      </div>
+                      <span style={styles.catName}>{cat.name}</span>
+                    </div>
                   );
                 })}
-              </View>
-            </>
-          )}
-        </View>
-      </>
-    )}
+              </div>
+            </div>
 
-    {/* Settings Tab */}
-    {activeTab === 'settings' && (
-      <>
-        <View style={styles.settingCard}>
-          <Text style={styles.settingLabel}>Monthly Budget</Text>
-          <View style={styles.budgetRow}>
-            <Text style={styles.budgetAmount}>{formatCurrency(budget)}</Text>
-            <TouchableOpacity
-              style={styles.editBtn}
-              onPress={() => {
-                Alert.prompt(
-                  'Set Budget',
-                  'Enter your monthly budget:',
-                  (text) => {
-                    const amount = parseFloat(text);
-                    if (!isNaN(amount) && amount > 0) {
-                      setBudget(amount);
-                    }
-                  },
-                  'plain-text',
-                  budget.toString()
-                );
-              }}
-            >
-              <Ionicons name="pencil" size={18} color="#FF9BB3" />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.budgetBar}>
-            <View 
-              style={[
-                styles.budgetProgress,
-                { 
-                  width: `${Math.min((totalExpense / budget) * 100, 100)}%`,
-                  backgroundColor: (totalExpense / budget) > 0.9 ? '#FF6B8A' : '#4CAF50'
-                }
-              ]}
+            {/* Supported Banks */}
+            <div style={styles.settingsSection}>
+              <div style={styles.settingsSectionTitle}>🏦 Supported Banks</div>
+              <p style={styles.supportedBanks}>
+                HDFC • ICICI • SBI • Axis • Kotak • IDFC • Yes Bank • PNB • BOB • Google Pay • PhonePe • Paytm • Amazon Pay • CRED
+              </p>
+            </div>
+          </>
+        )}
+      </main>
+
+      {/* Add Button */}
+      <button style={styles.addBtn} onClick={() => setShowAddModal(true)}>
+        <Plus size={28} color="#fff" />
+      </button>
+
+      {/* Bottom Navigation */}
+      <nav style={styles.bottomNav}>
+        {[
+          { id: 'home', icon: '🏠', label: 'Home' },
+          { id: 'charts', icon: '📊', label: 'Charts' },
+          { id: 'settings', icon: '⚙️', label: 'Settings' },
+        ].map(item => (
+          <button
+            key={item.id}
+            style={styles.navItem}
+            onClick={() => { setActiveTab(item.id); setDetailView(null); }}
+          >
+            <span style={{ fontSize: '22px' }}>{item.icon}</span>
+            <span style={{ ...styles.navLabel, color: activeTab === item.id ? '#FF9BB3' : '#B8B8D0' }}>{item.label}</span>
+            {activeTab === item.id && <div style={styles.navDot} />}
+          </button>
+        ))}
+      </nav>
+
+      {/* Add Transaction Modal */}
+      {showAddModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Add Transaction</h2>
+              <button style={styles.closeBtn} onClick={() => setShowAddModal(false)}>
+                <X size={24} color="#B8B8D0" />
+              </button>
+            </div>
+
+            <div style={styles.typeToggle}>
+              <button
+                style={{ ...styles.typeBtn, background: transactionType === 'expense' ? '#FFE5E5' : '#f5f5f5', color: transactionType === 'expense' ? '#FF6B8A' : '#999' }}
+                onClick={() => { setTransactionType('expense'); setNewTransaction(p => ({ ...p, category: 'food' })); }}
+              >
+                💸 Expense
+              </button>
+              <button
+                style={{ ...styles.typeBtn, background: transactionType === 'income' ? '#E8F5E9' : '#f5f5f5', color: transactionType === 'income' ? '#4CAF50' : '#999' }}
+                onClick={() => { setTransactionType('income'); setNewTransaction(p => ({ ...p, category: 'salary' })); }}
+              >
+                💰 Income
+              </button>
+            </div>
+
+            <div style={styles.amountSection}>
+              <span style={styles.currencySign}>₹</span>
+              <input
+                type="number"
+                placeholder="0"
+                style={styles.amountInput}
+                value={newTransaction.amount}
+                onChange={(e) => setNewTransaction(p => ({ ...p, amount: e.target.value }))}
+              />
+            </div>
+
+            <input
+              type="text"
+              placeholder="Add note..."
+              style={styles.noteInput}
+              value={newTransaction.note}
+              onChange={(e) => setNewTransaction(p => ({ ...p, note: e.target.value }))}
             />
-          </View>
-          <Text style={styles.budgetText}>
-            Spent {formatCurrency(totalExpense)} of {formatCurrency(budget)} 
-            ({Math.round((totalExpense / budget) * 100)}%)
-          </Text>
-        </View>
 
-        <View style={styles.settingCard}>
-          <Text style={styles.settingLabel}>Categories</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-            {categories.map(cat => {
-              const icon = iconLibrary[cat.icon] || iconLibrary.other;
-              return (
-                <View key={cat.id} style={styles.categoryChip}>
-                  <View style={[styles.categoryChipIcon, { backgroundColor: icon.bg }]}>
-                    <Text style={styles.categoryEmoji}>{icon.emoji}</Text>
-                  </View>
-                  <Text style={styles.categoryChipText}>{cat.name}</Text>
-                </View>
-              );
-            })}
-          </ScrollView>
-          <TouchableOpacity
-            style={styles.addCategoryBtn}
-            onPress={() => setShowCategoryModal(true)}
-          >
-            <Ionicons name="add-circle" size={20} color="#FF9BB3" />
-            <Text style={styles.addCategoryText}>Add Category</Text>
-          </TouchableOpacity>
-        </View>
+            {transactionType === 'expense' && (
+              <>
+                <p style={styles.sectionLabel}>💳 Payment Mode</p>
+                <div style={styles.paymentGrid}>
+                  {paymentModes.map(mode => (
+                    <button
+                      key={mode.id}
+                      style={{
+                        ...styles.paymentOption,
+                        background: newTransaction.paymentMode === mode.id ? mode.bg : '#f9f9f9',
+                        border: newTransaction.paymentMode === mode.id ? `2px solid ${mode.color}` : '2px solid transparent'
+                      }}
+                      onClick={() => setNewTransaction(p => ({ ...p, paymentMode: mode.id }))}
+                    >
+                      <span style={{ fontSize: '20px' }}>{mode.emoji}</span>
+                      <span style={{ ...styles.paymentOptLabel, color: newTransaction.paymentMode === mode.id ? mode.color : '#888' }}>{mode.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
-        <View style={styles.settingCard}>
-          <Text style={styles.settingLabel}>Data Management</Text>
-          <TouchableOpacity
-            style={styles.settingBtn}
-            onPress={() => {
-              Alert.alert(
-                'Clear All Data',
-                'This will delete all transactions and categories. Are you sure?',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Clear', style: 'destructive', onPress: async () => {
-                    setTransactions([]);
-                    setCategories(defaultCategories);
-                    setBudget(50000);
-                    await AsyncStorage.removeItem('moneyplus-data-v2');
-                    Alert.alert('Success', 'All data has been cleared.');
-                  }}
-                ]
-              );
-            }}
-          >
-            <Ionicons name="trash" size={20} color="#FF6B8A" />
-            <Text style={[styles.settingBtnText, { color: '#FF6B8A' }]}>Clear All Data</Text>
-          </TouchableOpacity>
-        </View>
+            <p style={styles.sectionLabel}>📁 Category</p>
+            <div style={styles.categoryGrid}>
+              {categories.filter(c => c.type === transactionType).map(cat => {
+                const iconData = iconLibrary[cat.icon] || iconLibrary.other;
+                const isSelected = newTransaction.category === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    style={{
+                      ...styles.categoryOption,
+                      background: isSelected ? iconData.bg : '#f9f9f9',
+                      border: isSelected ? '2px solid #FF9BB3' : '2px solid transparent'
+                    }}
+                    onClick={() => setNewTransaction(p => ({ ...p, category: cat.id }))}
+                  >
+                    <span style={{ fontSize: '22px' }}>{iconData.emoji}</span>
+                    <span style={{ ...styles.categoryOptLabel, color: isSelected ? '#5A5A7A' : '#B8B8D0' }}>{cat.name}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-        <View style={styles.appInfo}>
-          <Text style={styles.appInfoText}>Money+ v1.0.0</Text>
-          <Text style={styles.appInfoText}>Expense Tracker</Text>
-          {lastSyncDate && (
-            <Text style={styles.appInfoText}>
-              Last SMS sync: {new Date(lastSyncDate).toLocaleString('en-IN')}
-            </Text>
-          )}
-        </View>
-      </>
-    )}
-  </ScrollView>
+            <button style={styles.saveBtn} onClick={addTransaction}>
+              <Check size={22} color="#fff" />
+              <span>Save Transaction</span>
+            </button>
+          </div>
+        </div>
+      )}
 
-  {/* Bottom Navigation */}
-  <View style={styles.bottomNav}>
-    <TouchableOpacity
-      style={styles.navItem}
-      onPress={() => setActiveTab('home')}
-    >
-      <Ionicons 
-        name={activeTab === 'home' ? 'home' : 'home-outline'} 
-        size={24} 
-        color={activeTab === 'home' ? '#FF9BB3' : '#B8B8D0'} 
-      />
-      <Text style={[styles.navText, activeTab === 'home' && styles.navTextActive]}>Home</Text>
-    </TouchableOpacity>
-    
-    <TouchableOpacity
-      style={styles.navItem}
-      onPress={() => setActiveTab('analytics')}
-    >
-      <Ionicons 
-        name={activeTab === 'analytics' ? 'pie-chart' : 'pie-chart-outline'} 
-        size={24} 
-        color={activeTab === 'analytics' ? '#FF9BB3' : '#B8B8D0'} 
-      />
-      <Text style={[styles.navText, activeTab === 'analytics' && styles.navTextActive]}>Analytics</Text>
-    </TouchableOpacity>
-    
-    <TouchableOpacity
-      style={styles.navItem}
-      onPress={() => setActiveTab('settings')}
-    >
-      <Ionicons 
-        name={activeTab === 'settings' ? 'settings' : 'settings-outline'} 
-        size={24} 
-        color={activeTab === 'settings' ? '#FF9BB3' : '#B8B8D0'} 
-      />
-      <Text style={[styles.navText, activeTab === 'settings' && styles.navTextActive]}>Settings</Text>
-    </TouchableOpacity>
-  </View>
+      {/* Edit Transaction Modal */}
+      {showEditModal && editTransaction && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>✏️ Edit Transaction</h2>
+              <button style={styles.closeBtn} onClick={() => { setShowEditModal(false); setEditTransaction(null); }}>
+                <X size={24} color="#B8B8D0" />
+              </button>
+            </div>
 
-  {/* Add Transaction Modal */}
-  <Modal
-    visible={showAddModal}
-    animationType="slide"
-    transparent={true}
-    onRequestClose={() => setShowAddModal(false)}
-  >
-    <View style={styles.modalOverlay}>
-      <View style={styles.modalContent}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>
-            Add {transactionType === 'expense' ? 'Expense' : 'Income'}
-          </Text>
-          <TouchableOpacity onPress={() => setShowAddModal(false)}>
-            <Ionicons name="close" size={24} color="#5A5A7A" />
-          </TouchableOpacity>
-        </View>
+            <div style={styles.amountSection}>
+              <span style={styles.currencySign}>₹</span>
+              <input
+                type="number"
+                placeholder="0"
+                style={styles.amountInput}
+                value={editTransaction.amount}
+                onChange={(e) => setEditTransaction(p => ({ ...p, amount: e.target.value }))}
+              />
+            </div>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Amount"
-          keyboardType="numeric"
-          value={newTransaction.amount}
-          onChangeText={(text) => setNewTransaction({ ...newTransaction, amount: text })}
-        />
+            <input
+              type="text"
+              placeholder="Add note..."
+              style={styles.noteInput}
+              value={editTransaction.note}
+              onChange={(e) => setEditTransaction(p => ({ ...p, note: e.target.value }))}
+            />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Note (optional)"
-          value={newTransaction.note}
-          onChangeText={(text) => setNewTransaction({ ...newTransaction, note: text })}
-        />
+            {editTransaction.type === 'expense' && (
+              <>
+                <p style={styles.sectionLabel}>💳 Payment Mode</p>
+                <div style={styles.paymentGrid}>
+                  {paymentModes.map(mode => (
+                    <button
+                      key={mode.id}
+                      style={{
+                        ...styles.paymentOption,
+                        background: editTransaction.paymentMode === mode.id ? mode.bg : '#f9f9f9',
+                        border: editTransaction.paymentMode === mode.id ? `2px solid ${mode.color}` : '2px solid transparent'
+                      }}
+                      onClick={() => setEditTransaction(p => ({ ...p, paymentMode: mode.id }))}
+                    >
+                      <span style={{ fontSize: '20px' }}>{mode.emoji}</span>
+                      <span style={{ ...styles.paymentOptLabel, color: editTransaction.paymentMode === mode.id ? mode.color : '#888' }}>{mode.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
-        <Text style={styles.inputLabel}>Category</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryPicker}>
-          {categories
-            .filter(cat => cat.type === transactionType)
-            .map(cat => {
-              const icon = iconLibrary[cat.icon] || iconLibrary.other;
-              const isSelected = newTransaction.category === cat.id;
-              
-              return (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.categoryOption, isSelected && styles.categoryOptionSelected]}
-                  onPress={() => setNewTransaction({ ...newTransaction, category: cat.id })}
-                >
-                  <View style={[styles.categoryOptionIcon, { backgroundColor: icon.bg }]}>
-                    <Text style={styles.categoryEmoji}>{icon.emoji}</Text>
-                  </View>
-                  <Text style={styles.categoryOptionText}>{cat.name}</Text>
-                </TouchableOpacity>
-              );
-            })}
-        </ScrollView>
+            <p style={styles.sectionLabel}>📁 Category</p>
+            <div style={styles.categoryGrid}>
+              {categories.filter(c => c.type === editTransaction.type).map(cat => {
+                const iconData = iconLibrary[cat.icon] || iconLibrary.other;
+                const isSelected = editTransaction.category === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    style={{
+                      ...styles.categoryOption,
+                      background: isSelected ? iconData.bg : '#f9f9f9',
+                      border: isSelected ? '2px solid #FF9BB3' : '2px solid transparent'
+                    }}
+                    onClick={() => setEditTransaction(p => ({ ...p, category: cat.id }))}
+                  >
+                    <span style={{ fontSize: '22px' }}>{iconData.emoji}</span>
+                    <span style={{ ...styles.categoryOptLabel, color: isSelected ? '#5A5A7A' : '#B8B8D0' }}>{cat.name}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-        <Text style={styles.inputLabel}>Payment Mode</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.paymentPicker}>
-          {paymentModes.map(mode => {
-            const isSelected = newTransaction.paymentMode === mode.id;
-            
-            return (
-              <TouchableOpacity
-                key={mode.id}
-                style={[styles.paymentOption, isSelected && { backgroundColor: mode.bg }]}
-                onPress={() => setNewTransaction({ ...newTransaction, paymentMode: mode.id })}
-              >
-                <Text style={styles.paymentEmoji}>{mode.emoji}</Text>
-                <Text style={[styles.paymentText, isSelected && { color: mode.color }]}>
-                  {mode.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+            <div style={{ display: 'flex', gap: '10px', padding: '0 20px 20px' }}>
+              <button style={{ ...styles.saveBtn, flex: 1, background: '#FF6B6B' }} onClick={() => { deleteTransaction(editTransaction.id); setShowEditModal(false); setEditTransaction(null); }}>
+                <Trash2 size={20} color="#fff" />
+                <span>Delete</span>
+              </button>
+              <button style={{ ...styles.saveBtn, flex: 2 }} onClick={saveEditedTransaction}>
+                <Check size={22} color="#fff" />
+                <span>Save Changes</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-        <TouchableOpacity style={styles.addBtn} onPress={addTransaction}>
-          <Text style={styles.addBtnText}>Add Transaction</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  </Modal>
+      {/* SMS Import Modal */}
+      {showSMSModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>📱 Import Transactions</h2>
+              <button style={styles.closeBtn} onClick={() => { setShowSMSModal(false); setSelectedSMS({}); }}>
+                <X size={24} color="#B8B8D0" />
+              </button>
+            </div>
 
-  {/* Add Category Modal */}
-  <Modal
-    visible={showCategoryModal}
-    animationType="slide"
-    transparent={true}
-    onRequestClose={() => setShowCategoryModal(false)}
-  >
-    <View style={styles.modalOverlay}>
-      <View style={styles.modalContent}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Add Category</Text>
-          <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
-            <Ionicons name="close" size={24} color="#5A5A7A" />
-          </TouchableOpacity>
-        </View>
+            <div style={styles.selectAllRow} onClick={selectAllSMS}>
+              <input type="checkbox" checked={sampleSMSToImport.every(sms => selectedSMS[sms.id])} readOnly style={{ width: 20, height: 20, accentColor: '#FF9BB3' }} />
+              <span style={styles.selectAllText}>
+                Select All ({Object.keys(selectedSMS).filter(k => selectedSMS[k]).length}/{sampleSMSToImport.length})
+              </span>
+            </div>
 
-        <View style={styles.iconPreview}>
-          <View style={[styles.previewIcon, { backgroundColor: iconLibrary[newCategory.icon].bg }]}>
-            <Text style={{ fontSize: 32 }}>{iconLibrary[newCategory.icon].emoji}</Text>
-          </View>
-          <TextInput
-            style={styles.categoryNameInput}
-            placeholder="Category name"
-            value={newCategory.name}
-            onChangeText={(text) => setNewCategory({ ...newCategory, name: text })}
-          />
-        </View>
+            <div style={styles.smsListContainer}>
+              {sampleSMSToImport.map(sms => {
+                const cat = categories.find(c => c.id === sms.category) || categories[0];
+                const iconData = iconLibrary[cat.icon] || iconLibrary.other;
+                const payMode = paymentModes.find(p => p.id === sms.paymentMode) || paymentModes[0];
+                const isSelected = selectedSMS[sms.id];
+                return (
+                  <div
+                    key={sms.id}
+                    style={{ ...styles.smsItem, background: isSelected ? '#FFF5F8' : '#fff' }}
+                    onClick={() => toggleSMSSelection(sms.id)}
+                  >
+                    <input type="checkbox" checked={isSelected || false} readOnly style={{ width: 20, height: 20, accentColor: '#FF9BB3' }} />
+                    <div style={{ ...styles.smsIcon, background: iconData.bg }}>
+                      <span style={{ fontSize: '18px' }}>{iconData.emoji}</span>
+                    </div>
+                    <div style={styles.smsInfo}>
+                      <div style={styles.smsMerchant}>{sms.merchant}</div>
+                      <div style={styles.smsMetaRow}>
+                        <span style={{ ...styles.smsType, color: sms.type === 'income' ? '#4CAF50' : '#FF6B8A' }}>
+                          {sms.type === 'income' ? '↓ Income' : '↑ Expense'}
+                        </span>
+                        <span style={styles.smsDateText}>{sms.date}</span>
+                      </div>
+                      <span style={{ ...styles.paymentBadge, background: payMode.bg, color: payMode.color, marginTop: '4px', display: 'inline-block' }}>
+                        {payMode.emoji} {payMode.name}
+                      </span>
+                    </div>
+                    <span style={{ ...styles.smsAmount, color: sms.type === 'income' ? '#4CAF50' : '#FF6B8A' }}>
+                      {sms.type === 'income' ? '+' : '-'}{formatCurrency(sms.amount)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
 
-        <View style={styles.tabSelector}>
-          <TouchableOpacity
-            style={[styles.tabBtn, newCategory.type === 'expense' && styles.tabBtnActive]}
-            onPress={() => setNewCategory({ ...newCategory, type: 'expense' })}
-          >
-            <Text style={[styles.tabBtnText, newCategory.type === 'expense' && styles.tabBtnTextActive]}>
-              Expense
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabBtn, newCategory.type === 'income' && styles.tabBtnActive]}
-            onPress={() => setNewCategory({ ...newCategory, type: 'income' })}
-          >
-            <Text style={[styles.tabBtnText, newCategory.type === 'income' && styles.tabBtnTextActive]}>
-              Income
-            </Text>
-          </TouchableOpacity>
-        </View>
+            <button style={{ ...styles.saveBtn, margin: '16px 20px 20px' }} onClick={importSelectedSMS}>
+              <span>Import {Object.keys(selectedSMS).filter(k => selectedSMS[k]).length} Transactions</span>
+            </button>
+          </div>
+        </div>
+      )}
 
-        <Text style={styles.iconGridTitle}>Choose Icon</Text>
-        <ScrollView style={{ maxHeight: 300 }}>
-          <View style={styles.iconGrid}>
-            {Object.keys(iconLibrary).map(key => {
-              const icon = iconLibrary[key];
-              const isSelected = newCategory.icon === key;
-              
-              return (
-                <TouchableOpacity
-                  key={key}
-                  style={[styles.iconOption, { backgroundColor: icon.bg }, isSelected && styles.iconOptionSelected]}
-                  onPress={() => setNewCategory({ ...newCategory, icon: key })}
-                >
-                  <Text style={{ fontSize: 28 }}>{icon.emoji}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </ScrollView>
-
-        <TouchableOpacity style={styles.addBtn} onPress={addCategory}>
-          <Text style={styles.addBtnText}>Add Category</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  </Modal>
-
-  {/* SMS Modal */}
-  <Modal
-    visible={showSMSModal}
-    animationType="slide"
-    transparent={true}
-    onRequestClose={() => setShowSMSModal(false)}
-  >
-    <View style={styles.modalOverlay}>
-      <View style={styles.modalContent}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Bank Transactions</Text>
-          <TouchableOpacity onPress={() => setShowSMSModal(false)}>
-            <Ionicons name="close" size={24} color="#5A5A7A" />
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.smsHint}>
-          Found {parsedSMS.length} bank transactions. Select the ones you want to add:
-        </Text>
-
-        <ScrollView style={styles.smsListContainer}>
-          {parsedSMS.map(sms => {
-            const isSelected = selectedSMS[sms.smsId];
-            
-            return (
-              <TouchableOpacity
-                key={sms.smsId}
-                style={[styles.smsItem, isSelected && styles.smsItemSelected]}
-                onPress={() => setSelectedSMS({
-                  ...selectedSMS,
-                  [sms.smsId]: !isSelected
-                })}
-              >
-                <View style={[
-                  styles.smsIcon,
-                  { backgroundColor: sms.type === 'expense' ? '#FFEBEF' : '#E8F5E9' }
-                ]}>
-                  <Ionicons 
-                    name={sms.type === 'expense' ? 'trending-down' : 'trending-up'} 
-                    size={20} 
-                    color={sms.type === 'expense' ? '#FF6B8A' : '#4CAF50'} 
-                  />
-                </View>
-                <View style={styles.smsInfo}>
-                  <Text style={styles.smsMerchant}>{sms.merchant || 'Transaction'}</Text>
-                  <View style={styles.smsMetaRow}>
-                    <Text style={[
-                      styles.smsType,
-                      { color: sms.type === 'expense' ? '#FF6B8A' : '#4CAF50' }
-                    ]}>
-                      {sms.type.toUpperCase()}
-                    </Text>
-                    <Text style={styles.smsDate}>
-                      {sms.date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={[
-                  styles.smsAmount,
-                  { color: sms.type === 'expense' ? '#FF6B8A' : '#4CAF50' }
-                ]}>
-                  {sms.type === 'income' ? '+' : '-'}{formatCurrency(sms.amount)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        <View style={styles.modalFooter}>
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={addSMSTransactions}
-          >
-            <Text style={styles.addBtnText}>
-              Add Selected ({Object.values(selectedSMS).filter(Boolean).length})
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  </Modal>
-</SafeAreaView>
-```
-
-);
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        input::placeholder { color: #B8B8D0; }
+      `}</style>
+    </div>
+  );
 }
 
-export default function App() {
-return (
-<ErrorBoundary>
-<AppContent />
-</ErrorBoundary>
-);
-}
-
-const styles = StyleSheet.create({
-container: { flex: 1, backgroundColor: ‘#FFF9FC’ },
-loadingContainer: { flex: 1, justifyContent: ‘center’, alignItems: ‘center’, backgroundColor: ‘#FFF9FC’ },
-loadingIcon: { fontSize: 48, marginBottom: 16 },
-loadingText: { fontSize: 16, color: ‘#B8B8D0’, fontWeight: ‘600’ },
-errorContainer: { flex: 1, justifyContent: ‘center’, alignItems: ‘center’, padding: 20 },
-errorIcon: { fontSize: 64, marginBottom: 20 },
-errorTitle: { fontSize: 20, fontWeight: ‘700’, color: ‘#FF6B8A’, marginBottom: 10, textAlign: ‘center’ },
-errorMessage: { fontSize: 14, color: ‘#888’, marginBottom: 24, textAlign: ‘center’ },
-retryButton: { backgroundColor: ‘#FF9BB3’, paddingVertical: 12, paddingHorizontal: 32, borderRadius: 12 },
-retryButtonText: { color: ‘#fff’, fontSize: 16, fontWeight: ‘600’ },
-header: { flexDirection: ‘row’, justifyContent: ‘space-between’, alignItems: ‘center’, paddingHorizontal: 20, paddingVertical: 16, backgroundColor: ‘#FFF9FC’, borderBottomWidth: 1, borderBottomColor: ‘#F5F5F5’ },
-appTitle: { fontSize: 24, fontWeight: ‘700’, color: ‘#5A5A7A’ },
-monthSelector: { flexDirection: ‘row’, alignItems: ‘center’, gap: 12 },
-monthBtn: { padding: 4 },
-monthText: { fontSize: 14, fontWeight: ‘600’, color: ‘#5A5A7A’, minWidth: 70, textAlign: ‘center’ },
-main: { flex: 1 },
-balanceCard: { backgroundColor: ‘#fff’, marginHorizontal: 20, marginTop: 20, padding: 24, borderRadius: 20, shadowColor: ‘#FF9BB3’, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 },
-balanceLabel: { fontSize: 13, color: ‘#B8B8D0’, fontWeight: ‘600’, marginBottom: 8 },
-balanceAmount: { fontSize: 36, fontWeight: ‘700’, color: ‘#5A5A7A’, marginBottom: 20 },
-balanceRow: { flexDirection: ‘row’, gap: 12 },
-incomeBox: { flex: 1, flexDirection: ‘row’, alignItems: ‘center’, gap: 10, backgroundColor: ‘#E8F5E9’, padding: 12, borderRadius: 12 },
-expenseBox: { flex: 1, flexDirection: ‘row’, alignItems: ‘center’, gap: 10, backgroundColor: ‘#FFEBEF’, padding: 12, borderRadius: 12 },
-miniLabel: { fontSize: 11, color: ‘#888’, fontWeight: ‘600’ },
-incomeAmount: { fontSize: 16, fontWeight: ‘700’, color: ‘#4CAF50’, marginTop: 2 },
-expenseAmount: { fontSize: 16, fontWeight: ‘700’, color: ‘#FF6B8A’, marginTop: 2 },
-quickActions: { flexDirection: ‘row’, gap: 12, paddingHorizontal: 20, marginTop: 20 },
-actionBtn: { flex: 1, alignItems: ‘center’, gap: 8 },
-actionIcon: { width: 56, height: 56, borderRadius: 16, justifyContent: ‘center’, alignItems: ‘center’, shadowColor: ‘#000’, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
-actionText: { fontSize: 12, color: ‘#5A5A7A’, fontWeight: ‘600’ },
-section: { marginTop: 24, paddingHorizontal: 20, marginBottom: 20 },
-sectionTitle: { fontSize: 18, fontWeight: ‘700’, color: ‘#5A5A7A’, marginBottom: 16 },
-emptyState: { alignItems: ‘center’, paddingVertical: 40 },
-emptyIcon: { fontSize: 48, marginBottom: 12 },
-emptyText: { fontSize: 16, fontWeight: ‘600’, color: ‘#B8B8D0’, marginBottom: 4 },
-emptyHint: { fontSize: 13, color: ‘#D0D0E0’ },
-transactionItem: { flexDirection: ‘row’, alignItems: ‘center’, paddingVertical: 14, gap: 12, borderBottomWidth: 1, borderBottomColor: ‘#F5F5F5’ },
-transIcon: { width: 48, height: 48, borderRadius: 14, justifyContent: ‘center’, alignItems: ‘center’ },
-transEmoji: { fontSize: 24 },
-transInfo: { flex: 1 },
-transTitle: { fontSize: 15, fontWeight: ‘600’, color: ‘#5A5A7A’, marginBottom: 2 },
-transNote: { fontSize: 12, color: ‘#B8B8D0’, marginBottom: 2 },
-transDate: { fontSize: 11, color: ‘#D0D0E0’ },
-transAmount: { fontSize: 16, fontWeight: ‘700’ },
-incomeText: { color: ‘#4CAF50’ },
-expenseText: { color: ‘#FF6B8A’ },
-tabSelector: { flexDirection: ‘row’, backgroundColor: ‘#F8F8FA’, marginHorizontal: 20, marginTop: 20, padding: 4, borderRadius: 12, gap: 4 },
-tabBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: ‘center’ },
-tabBtnActive: { backgroundColor: ‘#FF9BB3’, shadowColor: ‘#FF9BB3’, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
-tabBtnText: { fontSize: 14, fontWeight: ‘600’, color: ‘#B8B8D0’ },
-tabBtnTextActive: { color: ‘#fff’ },
-chartContainer: { backgroundColor: ‘#fff’, marginHorizontal: 20, marginTop: 20, padding: 20, borderRadius: 20, shadowColor: ‘#000’, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3, marginBottom: 20 },
-chartTitle: { fontSize: 16, fontWeight: ‘700’, color: ‘#5A5A7A’, marginBottom: 20, textAlign: ‘center’ },
-emptyChart: { alignItems: ‘center’, paddingVertical: 60 },
-donutContainer: { alignItems: ‘center’, marginBottom: 24, position: ‘relative’ },
-donutCenter: { position: ‘absolute’, top: 0, left: 0, right: 0, bottom: 0, justifyContent: ‘center’, alignItems: ‘center’ },
-donutTotal: { fontSize: 20, fontWeight: ‘700’, color: ‘#5A5A7A’ },
-donutLabel: { fontSize: 12, color: ‘#B8B8D0’, marginTop: 2 },
-legend: { gap: 10 },
-legendItem: { flexDirection: ‘row’, alignItems: ‘center’, gap: 10 },
-legendDot: { width: 12, height: 12, borderRadius: 6 },
-legendText: { flex: 1, fontSize: 13, color: ‘#5A5A7A’, fontWeight: ‘600’ },
-legendPercent: { fontSize: 13, color: ‘#B8B8D0’, fontWeight: ‘600’, width: 50, textAlign: ‘right’ },
-legendAmount: { fontSize: 13, color: ‘#5A5A7A’, fontWeight: ‘600’, width: 90, textAlign: ‘right’ },
-settingCard: { backgroundColor: ‘#fff’, marginHorizontal: 20, marginTop: 20, padding: 20, borderRadius: 20, shadowColor: ‘#000’, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
-settingLabel: { fontSize: 16, fontWeight: ‘700’, color: ‘#5A5A7A’, marginBottom: 16 },
-budgetRow: { flexDirection: ‘row’, justifyContent: ‘space-between’, alignItems: ‘center’, marginBottom: 16 },
-budgetAmount: { fontSize: 28, fontWeight: ‘700’, color: ‘#5A5A7A’ },
-editBtn: { padding: 8, backgroundColor: ‘#FFF0F5’, borderRadius: 10 },
-budgetBar: { height: 8, backgroundColor: ‘#F0F0F0’, borderRadius: 4, marginBottom: 12, overflow: ‘hidden’ },
-budgetProgress: { height: ‘100%’, borderRadius: 4 },
-budgetText: { fontSize: 13, color: ‘#B8B8D0’ },
-categoryScroll: { marginBottom: 16 },
-categoryChip: { marginRight: 12, alignItems: ‘center’ },
-categoryChipIcon: { width: 56, height: 56, borderRadius: 16, justifyContent: ‘center’, alignItems: ‘center’, marginBottom: 6 },
-categoryEmoji: { fontSize: 24 },
-categoryChipText: { fontSize: 11, color: ‘#5A5A7A’, fontWeight: ‘600’, textAlign: ‘center’ },
-addCategoryBtn: { flexDirection: ‘row’, alignItems: ‘center’, justifyContent: ‘center’, gap: 6, paddingVertical: 12, backgroundColor: ‘#FFF0F5’, borderRadius: 12 },
-addCategoryText: { fontSize: 14, fontWeight: ‘600’, color: ‘#FF9BB3’ },
-settingBtn: { flexDirection: ‘row’, alignItems: ‘center’, gap: 12, paddingVertical: 12 },
-settingBtnText: { fontSize: 15, fontWeight: ‘600’, color: ‘#5A5A7A’ },
-appInfo: { alignItems: ‘center’, paddingVertical: 24, gap: 4 },
-appInfoText: { fontSize: 12, color: ‘#D0D0E0’ },
-bottomNav: { flexDirection: ‘row’, backgroundColor: ‘#fff’, paddingVertical: 12, paddingBottom: 16, borderTopWidth: 1, borderTopColor: ‘#F5F5F5’ },
-navItem: { flex: 1, alignItems: ‘center’, gap: 4 },
-navText: { fontSize: 11, color: ‘#B8B8D0’, fontWeight: ‘600’ },
-navTextActive: { color: ‘#FF9BB3’ },
-modalOverlay: { flex: 1, backgroundColor: ‘rgba(0, 0, 0, 0.5)’, justifyContent: ‘flex-end’ },
-modalContent: { backgroundColor: ‘#fff’, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: ‘90%’ },
-modalHeader: { flexDirection: ‘row’, justifyContent: ‘space-between’, alignItems: ‘center’, paddingHorizontal: 20, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: ‘#F5F5F5’ },
-modalTitle: { fontSize: 20, fontWeight: ‘700’, color: ‘#5A5A7A’ },
-modalFooter: { paddingHorizontal: 20, paddingBottom: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: ‘#F5F5F5’ },
-input: { marginHorizontal: 20, marginTop: 16, paddingHorizontal: 16, paddingVertical: 14, backgroundColor: ‘#F8F8FA’, borderRadius: 12, fontSize: 15, color: ‘#5A5A7A’ },
-inputLabel: { fontSize: 13, fontWeight: ‘600’, color: ‘#888’, marginLeft: 20, marginTop: 20, marginBottom: 12 },
-categoryPicker: { paddingHorizontal: 20, maxHeight: 140 },
-categoryOption: { alignItems: ‘center’, marginRight: 12, padding: 8, borderRadius: 12, minWidth: 80 },
-categoryOptionSelected: { backgroundColor: ‘#FFF0F5’ },
-categoryOptionIcon: { width: 56, height: 56, borderRadius: 16, justifyContent: ‘center’, alignItems: ‘center’, marginBottom: 6 },
-categoryOptionText: { fontSize: 11, color: ‘#5A5A7A’, fontWeight: ‘600’, textAlign: ‘center’ },
-paymentPicker: { paddingHorizontal: 20 },
-paymentOption: { flexDirection: ‘row’, alignItems: ‘center’, gap: 8, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, marginRight: 12, backgroundColor: ‘#F8F8FA’ },
-paymentEmoji: { fontSize: 20 },
-paymentText: { fontSize: 13, fontWeight: ‘600’, color: ‘#5A5A7A’ },
-addBtn: { marginHorizontal: 20, marginTop: 24, marginBottom: 20, backgroundColor: ‘#FF9BB3’, paddingVertical: 16, borderRadius: 12, alignItems: ‘center’, shadowColor: ‘#FF9BB3’, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
-addBtnText: { fontSize: 16, fontWeight: ‘700’, color: ‘#fff’ },
-smsHint: { fontSize: 13, color: ‘#888’, marginHorizontal: 20, marginTop: 16, marginBottom: 12 },
-smsListContainer: { maxHeight: 400 },
-smsItem: { flexDirection: ‘row’, alignItems: ‘center’, paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: ‘#f5f5f5’, gap: 10 },
-smsItemSelected: { backgroundColor: ‘#FFF5F8’ },
-smsIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: ‘center’, alignItems: ‘center’ },
-smsInfo: { flex: 1 },
-smsMerchant: { fontSize: 13, fontWeight: ‘600’, color: ‘#5A5A7A’ },
-smsMetaRow: { flexDirection: ‘row’, alignItems: ‘center’, gap: 8, marginTop: 2 },
-smsType: { fontSize: 11, fontWeight: ‘600’ },
-smsDate: { fontSize: 11, color: ‘#B8B8D0’ },
-smsAmount: { fontSize: 14, fontWeight: ‘700’ },
-iconPreview: { flexDirection: ‘row’, alignItems: ‘center’, backgroundColor: ‘#FAFAFA’, marginHorizontal: 20, padding: 14, borderRadius: 14, marginBottom: 16, marginTop: 10 },
-previewIcon: { width: 56, height: 56, borderRadius: 16, justifyContent: ‘center’, alignItems: ‘center’ },
-categoryNameInput: { flex: 1, fontSize: 16, fontWeight: ‘600’, color: ‘#5A5A7A’, marginLeft: 14 },
-iconGridTitle: { fontSize: 12, fontWeight: ‘600’, color: ‘#888’, marginLeft: 20, marginBottom: 10 },
-iconGrid: { flexDirection: ‘row’, flexWrap: ‘wrap’, gap: 8, paddingHorizontal: 20, marginBottom: 20 },
-iconOption: { width: (width - 40 - 32) / 5, aspectRatio: 1, borderRadius: 12, justifyContent: ‘center’, alignItems: ‘center’ },
-iconOptionSelected: { borderWidth: 3, borderColor: ‘#FF9BB3’ },
-});
+const styles = {
+  container: { fontFamily: "'Nunito', -apple-system, BlinkMacSystemFont, sans-serif", background: 'linear-gradient(180deg, #FFF9FC 0%, #FFF5F8 50%, #FFEEF4 100%)', minHeight: '100vh', maxWidth: '430px', margin: '0 auto', position: 'relative', paddingBottom: '90px', overflow: 'hidden' },
+  bgDecor1: { position: 'absolute', top: '-100px', right: '-100px', width: '250px', height: '250px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,155,179,0.15) 0%, rgba(255,155,179,0) 70%)', pointerEvents: 'none' },
+  bgDecor2: { position: 'absolute', bottom: '100px', left: '-80px', width: '200px', height: '200px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(155,107,255,0.1) 0%, rgba(155,107,255,0) 70%)', pointerEvents: 'none' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '50px 20px 16px' },
+  appTitle: { fontSize: '22px', fontWeight: '800', color: '#FF9BB3', margin: 0 },
+  monthSelector: { display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', padding: '8px 12px', borderRadius: '20px', boxShadow: '0 2px 12px rgba(255,155,179,0.15)' },
+  monthBtn: { background: 'none', border: 'none', color: '#FF9BB3', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center' },
+  monthText: { fontSize: '13px', fontWeight: '600', color: '#5A5A7A', minWidth: '75px', textAlign: 'center' },
+  main: { padding: '0 16px' },
+  balanceCard: { background: '#fff', borderRadius: '20px', padding: '20px', marginBottom: '12px', boxShadow: '0 4px 20px rgba(255,155,179,0.12)' },
+  balanceLabel: { fontSize: '12px', color: '#B8B8D0', marginBottom: '4px' },
+  balanceAmount: { fontSize: '32px', fontWeight: '800', color: '#5A5A7A', marginBottom: '16px' },
+  balanceRow: { display: 'flex', gap: '12px' },
+  incomeBox: { flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#E8F5E9', padding: '12px', borderRadius: '14px' },
+  expenseBox: { flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#FFE5E5', padding: '12px', borderRadius: '14px' },
+  miniLabel: { fontSize: '10px', color: '#888' },
+  incomeAmount: { fontSize: '14px', fontWeight: '700', color: '#4CAF50' },
+  expenseAmount: { fontSize: '14px', fontWeight: '700', color: '#FF6B8A' },
+  syncButton: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#fff', padding: '14px', borderRadius: '14px', border: '1px solid #FFE5E5', marginBottom: '12px', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
+  syncButtonText: { fontSize: '14px', fontWeight: '600', color: '#FF9BB3' },
+  syncDate: { fontSize: '11px', color: '#B8B8D0', marginLeft: '8px' },
+  budgetSection: { background: '#fff', borderRadius: '16px', padding: '14px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
+  budgetHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: '8px' },
+  budgetTitle: { fontSize: '12px', fontWeight: '600', color: '#5A5A7A' },
+  budgetValue: { fontSize: '11px', color: '#B8B8D0' },
+  budgetTrack: { height: '8px', background: '#F5F5F5', borderRadius: '8px', overflow: 'hidden' },
+  budgetFill: { height: '100%', borderRadius: '8px', transition: 'width 0.4s ease' },
+  budgetRemaining: { fontSize: '11px', textAlign: 'center', marginTop: '8px' },
+  paymentSummary: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' },
+  paymentModeCard: { background: '#fff', borderRadius: '12px', padding: '10px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
+  paymentModeName: { fontSize: '9px', color: '#888' },
+  paymentModeAmount: { fontSize: '11px', fontWeight: '700', color: '#5A5A7A' },
+  searchBox: { display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', padding: '12px 16px', borderRadius: '14px', marginBottom: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
+  searchInput: { flex: 1, border: 'none', outline: 'none', fontSize: '14px', color: '#5A5A7A', background: 'transparent' },
+  sectionTitle: { fontSize: '15px', fontWeight: '700', color: '#5A5A7A', marginBottom: '12px' },
+  dateGroup: { marginBottom: '16px' },
+  dateHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 4px', marginBottom: '8px', borderBottom: '1px solid #f0f0f0' },
+  dateHeaderText: { fontSize: '13px', fontWeight: '700', color: '#FF9BB3' },
+  dateHeaderAmount: { fontSize: '12px', fontWeight: '600' },
+  transactionItem: { display: 'flex', alignItems: 'center', gap: '12px', background: '#fff', padding: '12px', borderRadius: '14px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', marginBottom: '8px', transition: 'all 0.2s ease', cursor: 'pointer' },
+  transactionIcon: { width: '46px', height: '46px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  transactionInfo: { flex: 1, minWidth: 0 },
+  transactionNote: { display: 'block', fontSize: '13px', fontWeight: '600', color: '#5A5A7A', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  transactionMeta: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' },
+  paymentBadge: { fontSize: '9px', fontWeight: '600', padding: '3px 8px', borderRadius: '10px' },
+  smsBadge: { fontSize: '8px', fontWeight: '600', padding: '2px 6px', borderRadius: '8px', background: '#E3F2FD', color: '#2196F3' },
+  categoryLabel: { fontSize: '10px', color: '#B8B8D0' },
+  transactionRight: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' },
+  transactionAmount: { fontSize: '14px', fontWeight: '700' },
+  deleteBtn: { background: 'none', border: 'none', padding: '2px', cursor: 'pointer' },
+  emptyState: { textAlign: 'center', padding: '40px 20px' },
+  emptyEmoji: { fontSize: '48px', marginBottom: '12px' },
+  emptyText: { fontSize: '16px', fontWeight: '600', color: '#5A5A7A', margin: '0 0 4px' },
+  emptySubtext: { fontSize: '13px', color: '#B8B8D0', margin: 0 },
+  chartToggle: { display: 'flex', gap: '10px', marginBottom: '16px' },
+  chartToggleBtn: { flex: 1, padding: '12px', borderRadius: '12px', border: 'none', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
+  paymentChartHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '12px', background: '#fff', borderRadius: '12px', fontSize: '14px', fontWeight: '600' },
+  statsItem: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#fff', borderRadius: '14px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', cursor: 'pointer' },
+  statsIcon: { width: '44px', height: '44px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  statsInfo: { flex: 1, minWidth: 0 },
+  statsName: { display: 'block', fontSize: '13px', fontWeight: '600', color: '#5A5A7A', marginBottom: '6px' },
+  statsBar: { height: '6px', background: '#F5F5F5', borderRadius: '6px', overflow: 'hidden' },
+  statsBarFill: { height: '100%', borderRadius: '6px', transition: 'width 0.3s' },
+  statsRight: { textAlign: 'right', minWidth: '70px' },
+  statsPercent: { display: 'block', fontSize: '13px', fontWeight: '700' },
+  statsAmount: { fontSize: '12px', color: '#888' },
+  detailHeader: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', padding: '4px 0' },
+  backBtn: { background: '#fff', border: 'none', width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' },
+  settingsSection: { background: '#fff', borderRadius: '16px', padding: '16px', marginBottom: '16px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' },
+  settingsSectionTitle: { fontSize: '15px', fontWeight: '700', color: '#5A5A7A', marginBottom: '12px' },
+  settingsItem: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderBottom: '1px solid #f5f5f5', cursor: 'pointer' },
+  settingsItemInfo: { flex: 1 },
+  settingsItemTitle: { fontSize: '14px', fontWeight: '600', color: '#5A5A7A' },
+  settingsItemDesc: { fontSize: '12px', color: '#B8B8D0', marginTop: '2px' },
+  budgetSetting: { marginTop: '8px' },
+  settingLabel: { fontSize: '13px', fontWeight: '600', color: '#5A5A7A', marginBottom: '8px' },
+  budgetInputRow: { display: 'flex', alignItems: 'center' },
+  rupeeSign: { fontSize: '24px', color: '#B8B8D0' },
+  budgetInputField: { flex: 1, border: 'none', fontSize: '28px', fontWeight: '700', color: '#5A5A7A', marginLeft: '8px', background: 'transparent', outline: 'none' },
+  catHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' },
+  addCatBtn: { width: '32px', height: '32px', borderRadius: '50%', background: '#FFF0F5', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
+  catGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' },
+  catItem: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' },
+  catIcon: { width: '48px', height: '48px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  catName: { fontSize: '10px', fontWeight: '600', color: '#5A5A7A', textAlign: 'center', maxWidth: '60px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  supportedBanks: { fontSize: '12px', color: '#888', lineHeight: '20px' },
+  addBtn: { position: 'fixed', bottom: '95px', left: '50%', transform: 'translateX(-50%)', width: '56px', height: '56px', borderRadius: '50%', background: 'linear-gradient(135deg, #FFB6C1 0%, #FF9BB3 100%)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 6px 20px rgba(255,155,179,0.4)', zIndex: 100 },
+  bottomNav: { position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '430px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-around', padding: '10px 0 26px', zIndex: 99 },
+  navItem: { background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', cursor: 'pointer', padding: '6px 20px', position: 'relative' },
+  navLabel: { fontSize: '10px', fontWeight: '600' },
+  navDot: { position: 'absolute', bottom: '0px', width: '4px', height: '4px', borderRadius: '50%', background: '#FF9BB3' },
+  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(90,90,122,0.4)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 200, backdropFilter: 'blur(4px)' },
+  modal: { background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '430px', maxHeight: '92vh', overflow: 'auto' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px', borderBottom: '1px solid #f5f5f5' },
+  modalTitle: { fontSize: '18px', fontWeight: '700', color: '#5A5A7A', margin: 0 },
+  closeBtn: { background: 'none', border: 'none', cursor: 'pointer' },
+  typeToggle: { display: 'flex', gap: '10px', padding: '14px 20px' },
+  typeBtn: { flex: 1, padding: '12px', borderRadius: '12px', border: 'none', fontSize: '13px', fontWeight: '700', cursor: 'pointer' },
+  amountSection: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', marginBottom: '16px', padding: '16px', background: '#FAFAFA', borderRadius: '16px', margin: '0 20px 16px' },
+  currencySign: { fontSize: '28px', color: '#B8B8D0', fontWeight: '600' },
+  amountInput: { background: 'transparent', border: 'none', fontSize: '36px', fontWeight: '800', color: '#5A5A7A', width: '160px', textAlign: 'center', outline: 'none' },
+  noteInput: { width: 'calc(100% - 40px)', margin: '0 20px 16px', padding: '14px', background: '#FAFAFA', border: 'none', borderRadius: '12px', fontSize: '14px', color: '#5A5A7A', outline: 'none' },
+  sectionLabel: { fontSize: '13px', fontWeight: '600', color: '#888', margin: '0 20px 10px' },
+  paymentGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', padding: '0 20px', marginBottom: '16px' },
+  paymentOption: { padding: '12px 8px', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer', border: '2px solid transparent' },
+  paymentOptLabel: { fontSize: '10px', fontWeight: '600', textAlign: 'center' },
+  categoryGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', padding: '0 20px', maxHeight: '200px', overflow: 'auto', marginBottom: '20px' },
+  categoryOption: { padding: '10px 4px', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer', border: '2px solid transparent' },
+  categoryOptLabel: { fontSize: '9px', fontWeight: '600', textAlign: 'center', maxWidth: '55px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  saveBtn: { width: 'calc(100% - 40px)', margin: '0 20px 20px', padding: '16px', background: 'linear-gradient(135deg, #FFB6C1 0%, #FF9BB3 100%)', border: 'none', borderRadius: '14px', color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 6px 20px rgba(255,155,179,0.3)' },
+  selectAllRow: { display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', borderBottom: '1px solid #f5f5f5', cursor: 'pointer' },
+  selectAllText: { fontSize: '14px', fontWeight: '600', color: '#5A5A7A' },
+  smsListContainer: { maxHeight: '350px', overflow: 'auto' },
+  smsItem: { display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', borderBottom: '1px solid #f5f5f5', cursor: 'pointer' },
+  smsIcon: { width: '40px', height: '40px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  smsInfo: { flex: 1 },
+  smsMerchant: { fontSize: '13px', fontWeight: '600', color: '#5A5A7A' },
+  smsMetaRow: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' },
+  smsType: { fontSize: '11px', fontWeight: '600' },
+  smsDateText: { fontSize: '11px', color: '#B8B8D0' },
+  smsAmount: { fontSize: '14px', fontWeight: '700' },
+};
