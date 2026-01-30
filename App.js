@@ -1,5 +1,36 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, ChevronLeft, ChevronRight, X, Check, Trash2, TrendingUp, TrendingDown, Search, RefreshCw, Smartphone, Clock, Building2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Plus, ChevronLeft, ChevronRight, X, Check, Trash2, TrendingUp, TrendingDown, Search, RefreshCw, Smartphone, Clock, Building2, Download, Edit3, Moon, Sun, CreditCard, Calendar, BarChart3 } from 'lucide-react';
+
+// Storage helper functions (localStorage for web, AsyncStorage for native)
+const Storage = {
+  getItem: async (key) => {
+    try {
+      const value = localStorage.getItem(key);
+      return value ? JSON.parse(value) : null;
+    } catch (e) {
+      console.error('Storage getItem error:', e);
+      return null;
+    }
+  },
+  setItem: async (key, value) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch (e) {
+      console.error('Storage setItem error:', e);
+      return false;
+    }
+  },
+  removeItem: async (key) => {
+    try {
+      localStorage.removeItem(key);
+      return true;
+    } catch (e) {
+      console.error('Storage removeItem error:', e);
+      return false;
+    }
+  }
+};
 
 // Payment modes
 const paymentModes = [
@@ -69,12 +100,50 @@ const defaultCategories = [
   { id: 'health', name: 'Health', icon: 'hospital', type: 'expense' },
   { id: 'emi', name: 'EMI', icon: 'emi', type: 'expense' },
   { id: 'insurance', name: 'Insurance', icon: 'insurance', type: 'expense' },
+  { id: 'subscription', name: 'Subscriptions', icon: 'movie', type: 'expense' },
+  { id: 'personal', name: 'Personal Care', icon: 'salon', type: 'expense' },
+  { id: 'education', name: 'Education', icon: 'book', type: 'expense' },
+  { id: 'gifts', name: 'Gifts', icon: 'gift', type: 'expense' },
   { id: 'other', name: 'Other', icon: 'other', type: 'expense' },
   { id: 'salary', name: 'Salary', icon: 'salary', type: 'income' },
   { id: 'bonus', name: 'Bonus', icon: 'bonus', type: 'income' },
   { id: 'freelance', name: 'Freelance', icon: 'freelance', type: 'income' },
   { id: 'refund', name: 'Refund', icon: 'refund', type: 'income' },
+  { id: 'interest', name: 'Interest', icon: 'interest', type: 'income' },
+  { id: 'dividend', name: 'Dividend', icon: 'invest', type: 'income' },
 ];
+
+// Helper function to export transactions to CSV
+const exportToCSV = (transactions, categories) => {
+  const headers = ['Date', 'Type', 'Category', 'Note', 'Amount', 'Payment Mode', 'Source'];
+  const rows = transactions.map(t => {
+    const cat = categories.find(c => c.id === t.category);
+    return [
+      t.date,
+      t.type,
+      cat?.name || t.category,
+      `"${t.note.replace(/"/g, '""')}"`,
+      t.amount,
+      t.paymentMode,
+      t.source || 'manual'
+    ].join(',');
+  });
+
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `money-plus-export-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+// Format date for input
+const formatDateForInput = (date) => {
+  if (!date) return new Date().toISOString().split('T')[0];
+  return date;
+};
 
 // Format currency
 const formatCurrency = (amount) => '₹' + new Intl.NumberFormat('en-IN').format(Math.round(amount));
@@ -162,7 +231,7 @@ const DonutChart = ({ data, total }) => {
 
 export default function MoneyPlusTracker() {
   const [transactions, setTransactions] = useState(sampleTransactions);
-  const [categories] = useState(defaultCategories);
+  const [categories, setCategories] = useState(defaultCategories);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editTransaction, setEditTransaction] = useState(null);
@@ -171,14 +240,82 @@ export default function MoneyPlusTracker() {
   const [transactionType, setTransactionType] = useState('expense');
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const [newTransaction, setNewTransaction] = useState({ amount: '', note: '', category: 'food', paymentMode: 'upi' });
-  const [budget] = useState(50000);
+  const [newTransaction, setNewTransaction] = useState({ amount: '', note: '', category: 'food', paymentMode: 'upi', date: new Date().toISOString().split('T')[0] });
+  const [budget, setBudget] = useState(50000);
   const [chartView, setChartView] = useState('category');
   const [searchQuery, setSearchQuery] = useState('');
   const [detailView, setDetailView] = useState(null);
   const [smsLoading, setSmsLoading] = useState(false);
   const [selectedSMS, setSelectedSMS] = useState({});
-  const [lastSyncDate] = useState('17 Jan 2025');
+  const [lastSyncDate, setLastSyncDate] = useState('17 Jan 2025');
+  const [darkMode, setDarkMode] = useState(false);
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [showCardMappingModal, setShowCardMappingModal] = useState(false);
+  const [cardMappings, setCardMappings] = useState([]);
+  const [newCardMapping, setNewCardMapping] = useState({ last4: '', type: 'debit' });
+  const [showInsightsModal, setShowInsightsModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
+
+  // Load data from storage on mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const savedTransactions = await Storage.getItem('transactions');
+        const savedBudget = await Storage.getItem('budget');
+        const savedCardMappings = await Storage.getItem('cardMappings');
+        const savedDarkMode = await Storage.getItem('darkMode');
+        const savedLastSync = await Storage.getItem('lastSyncDate');
+        const savedCategories = await Storage.getItem('categories');
+
+        if (savedTransactions && savedTransactions.length > 0) {
+          setTransactions(savedTransactions);
+        }
+        if (savedBudget) setBudget(savedBudget);
+        if (savedCardMappings) setCardMappings(savedCardMappings);
+        if (savedDarkMode !== null) setDarkMode(savedDarkMode);
+        if (savedLastSync) setLastSyncDate(savedLastSync);
+        if (savedCategories && savedCategories.length > 0) setCategories(savedCategories);
+
+        setDataLoaded(true);
+      } catch (e) {
+        console.error('Error loading data:', e);
+        setDataLoaded(true);
+      }
+    };
+    loadData();
+  }, []);
+
+  // Save data to storage whenever it changes
+  useEffect(() => {
+    if (dataLoaded) {
+      Storage.setItem('transactions', transactions);
+    }
+  }, [transactions, dataLoaded]);
+
+  useEffect(() => {
+    if (dataLoaded) {
+      Storage.setItem('budget', budget);
+    }
+  }, [budget, dataLoaded]);
+
+  useEffect(() => {
+    if (dataLoaded) {
+      Storage.setItem('cardMappings', cardMappings);
+    }
+  }, [cardMappings, dataLoaded]);
+
+  useEffect(() => {
+    if (dataLoaded) {
+      Storage.setItem('darkMode', darkMode);
+    }
+  }, [darkMode, dataLoaded]);
+
+  useEffect(() => {
+    if (dataLoaded) {
+      Storage.setItem('categories', categories);
+    }
+  }, [categories, dataLoaded]);
 
   const colors = ['#FF6B8A', '#9B6BFF', '#6BAFFF', '#FFB86B', '#6BFF9B', '#FF6BDF'];
 
@@ -254,12 +391,70 @@ export default function MoneyPlusTracker() {
       note: newTransaction.note || cat?.name || 'Transaction',
       category: newTransaction.category,
       paymentMode: newTransaction.paymentMode,
-      date: new Date().toISOString().split('T')[0],
+      date: newTransaction.date || new Date().toISOString().split('T')[0],
       type: transactionType,
       source: 'manual',
     }, ...prev]);
-    setNewTransaction({ amount: '', note: '', category: transactionType === 'income' ? 'salary' : 'food', paymentMode: 'upi' });
+    setNewTransaction({ amount: '', note: '', category: transactionType === 'income' ? 'salary' : 'food', paymentMode: 'upi', date: new Date().toISOString().split('T')[0] });
     setShowAddModal(false);
+  };
+
+  // Card mapping functions
+  const addCardMapping = () => {
+    if (!newCardMapping.last4 || newCardMapping.last4.length !== 4) {
+      return alert('Enter valid 4-digit card number');
+    }
+    if (cardMappings.some(c => c.last4 === newCardMapping.last4)) {
+      return alert('Card already mapped');
+    }
+    setCardMappings(prev => [...prev, { ...newCardMapping, id: Date.now() }]);
+    setNewCardMapping({ last4: '', type: 'debit' });
+  };
+
+  const deleteCardMapping = (id) => {
+    setCardMappings(prev => prev.filter(c => c.id !== id));
+  };
+
+  // Get payment mode from card last 4 digits
+  const getPaymentModeFromCard = (cardLast4) => {
+    if (!cardLast4) return null;
+    const mapping = cardMappings.find(c => c.last4 === cardLast4);
+    return mapping ? mapping.type : null;
+  };
+
+  // Calculate insights
+  const getInsights = () => {
+    const thisMonthTxns = monthTransactions.filter(t => t.type === 'expense');
+    const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+    const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+    const lastMonthTxns = transactions.filter(t => {
+      const d = new Date(t.date);
+      return d.getMonth() === lastMonth && d.getFullYear() === lastMonthYear && t.type === 'expense';
+    });
+
+    const thisMonthTotal = thisMonthTxns.reduce((s, t) => s + t.amount, 0);
+    const lastMonthTotal = lastMonthTxns.reduce((s, t) => s + t.amount, 0);
+    const dailyAverage = thisMonthTotal / (new Date().getDate());
+
+    // Top spending category
+    const catSpending = {};
+    thisMonthTxns.forEach(t => {
+      catSpending[t.category] = (catSpending[t.category] || 0) + t.amount;
+    });
+    const topCategory = Object.entries(catSpending).sort((a, b) => b[1] - a[1])[0];
+
+    // Spending trend
+    const trend = lastMonthTotal > 0 ? ((thisMonthTotal - lastMonthTotal) / lastMonthTotal * 100).toFixed(1) : 0;
+
+    return {
+      thisMonthTotal,
+      lastMonthTotal,
+      dailyAverage,
+      topCategory: topCategory ? { id: topCategory[0], amount: topCategory[1] } : null,
+      trend,
+      transactionCount: thisMonthTxns.length,
+      budgetUsed: ((thisMonthTotal / budget) * 100).toFixed(1)
+    };
   };
 
   const deleteTransaction = (id) => {
@@ -336,8 +531,22 @@ export default function MoneyPlusTracker() {
     return monthTransactions.filter(t => t.paymentMode === detailView.id && t.type === 'expense');
   };
 
+  const theme = darkMode ? {
+    bg: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%)',
+    card: '#1e1e3f',
+    text: '#e0e0e0',
+    textMuted: '#888',
+    border: '#333'
+  } : {
+    bg: 'linear-gradient(180deg, #FFF9FC 0%, #FFF5F8 50%, #FFEEF4 100%)',
+    card: '#fff',
+    text: '#5A5A7A',
+    textMuted: '#B8B8D0',
+    border: '#f5f5f5'
+  };
+
   return (
-    <div style={styles.container}>
+    <div style={{ ...styles.container, background: theme.bg }}>
       {/* Background decorations */}
       <div style={styles.bgDecor1} />
       <div style={styles.bgDecor2} />
@@ -681,45 +890,100 @@ export default function MoneyPlusTracker() {
         {/* SETTINGS TAB */}
         {activeTab === 'settings' && (
           <>
+            {/* Appearance Section */}
+            <div style={{ ...styles.settingsSection, background: theme.card }}>
+              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>🎨 Appearance</div>
+              <div style={styles.settingsItem} onClick={() => setDarkMode(!darkMode)}>
+                {darkMode ? <Moon size={24} color="#9B6BFF" /> : <Sun size={24} color="#FFB86B" />}
+                <div style={styles.settingsItemInfo}>
+                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Dark Mode</div>
+                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>{darkMode ? 'Enabled' : 'Disabled'}</div>
+                </div>
+                <div style={{
+                  width: '50px', height: '28px', borderRadius: '14px',
+                  background: darkMode ? '#9B6BFF' : '#ddd',
+                  position: 'relative', transition: 'all 0.3s'
+                }}>
+                  <div style={{
+                    width: '24px', height: '24px', borderRadius: '50%',
+                    background: '#fff', position: 'absolute', top: '2px',
+                    left: darkMode ? '24px' : '2px', transition: 'all 0.3s'
+                  }} />
+                </div>
+              </div>
+            </div>
+
             {/* SMS Section */}
-            <div style={styles.settingsSection}>
-              <div style={styles.settingsSectionTitle}>📱 SMS Auto-Sync</div>
+            <div style={{ ...styles.settingsSection, background: theme.card }}>
+              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>📱 SMS Auto-Sync</div>
               <div style={styles.settingsItem} onClick={syncSMS}>
                 <RefreshCw size={24} color="#FF9BB3" />
                 <div style={styles.settingsItemInfo}>
-                  <div style={styles.settingsItemTitle}>Sync Bank SMS</div>
-                  <div style={styles.settingsItemDesc}>Import transactions from bank messages</div>
+                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Sync Bank SMS</div>
+                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>Import transactions from bank messages</div>
                 </div>
                 <ChevronRight size={20} color="#ccc" />
               </div>
               <div style={styles.settingsItem}>
                 <Clock size={24} color="#9B6BFF" />
                 <div style={styles.settingsItemInfo}>
-                  <div style={styles.settingsItemTitle}>Last Synced</div>
-                  <div style={styles.settingsItemDesc}>{lastSyncDate}, 10:30 AM</div>
+                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Last Synced</div>
+                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>{lastSyncDate}, 10:30 AM</div>
                 </div>
               </div>
             </div>
 
             {/* Budget Section */}
-            <div style={styles.settingsSection}>
-              <div style={styles.settingsSectionTitle}>🎯 Budget Settings</div>
-              <div style={styles.budgetSetting}>
-                <span style={styles.settingLabel}>Monthly Budget</span>
-                <div style={styles.budgetInputRow}>
-                  <span style={styles.rupeeSign}>₹</span>
-                  <input type="text" value="50,000" style={styles.budgetInputField} readOnly />
+            <div style={{ ...styles.settingsSection, background: theme.card }}>
+              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>🎯 Budget Settings</div>
+              <div style={styles.settingsItem} onClick={() => setShowBudgetModal(true)}>
+                <BarChart3 size={24} color="#4CAF50" />
+                <div style={styles.settingsItemInfo}>
+                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Monthly Budget</div>
+                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>{formatCurrency(budget)}</div>
                 </div>
+                <Edit3 size={20} color="#ccc" />
+              </div>
+              <div style={styles.settingsItem} onClick={() => setShowInsightsModal(true)}>
+                <TrendingUp size={24} color="#FF9BB3" />
+                <div style={styles.settingsItemInfo}>
+                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Monthly Insights</div>
+                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>View spending analytics</div>
+                </div>
+                <ChevronRight size={20} color="#ccc" />
+              </div>
+            </div>
+
+            {/* Card Mapping Section */}
+            <div style={{ ...styles.settingsSection, background: theme.card }}>
+              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>💳 Card Mapping</div>
+              <div style={styles.settingsItem} onClick={() => setShowCardMappingModal(true)}>
+                <CreditCard size={24} color="#2196F3" />
+                <div style={styles.settingsItemInfo}>
+                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Manage Cards</div>
+                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>{cardMappings.length} cards mapped</div>
+                </div>
+                <ChevronRight size={20} color="#ccc" />
+              </div>
+            </div>
+
+            {/* Export Section */}
+            <div style={{ ...styles.settingsSection, background: theme.card }}>
+              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>📤 Data Export</div>
+              <div style={styles.settingsItem} onClick={() => exportToCSV(transactions, categories)}>
+                <Download size={24} color="#6BAFFF" />
+                <div style={styles.settingsItemInfo}>
+                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Export to CSV</div>
+                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>Download all transactions</div>
+                </div>
+                <ChevronRight size={20} color="#ccc" />
               </div>
             </div>
 
             {/* Categories Section */}
-            <div style={styles.settingsSection}>
+            <div style={{ ...styles.settingsSection, background: theme.card }}>
               <div style={styles.catHeader}>
-                <div style={styles.settingsSectionTitle}>📁 Categories</div>
-                <button style={styles.addCatBtn}>
-                  <Plus size={18} color="#FF9BB3" />
-                </button>
+                <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>📁 Categories</div>
               </div>
               <div style={styles.catGrid}>
                 {categories.filter(c => c.type === 'expense').slice(0, 8).map(cat => {
@@ -729,7 +993,7 @@ export default function MoneyPlusTracker() {
                       <div style={{ ...styles.catIcon, background: iconData.bg }}>
                         <span style={{ fontSize: '24px' }}>{iconData.emoji}</span>
                       </div>
-                      <span style={styles.catName}>{cat.name}</span>
+                      <span style={{ ...styles.catName, color: theme.text }}>{cat.name}</span>
                     </div>
                   );
                 })}
@@ -737,9 +1001,9 @@ export default function MoneyPlusTracker() {
             </div>
 
             {/* Supported Banks */}
-            <div style={styles.settingsSection}>
-              <div style={styles.settingsSectionTitle}>🏦 Supported Banks</div>
-              <p style={styles.supportedBanks}>
+            <div style={{ ...styles.settingsSection, background: theme.card }}>
+              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>🏦 Supported Banks</div>
+              <p style={{ ...styles.supportedBanks, color: theme.textMuted }}>
                 HDFC • ICICI • SBI • Axis • Kotak • IDFC • Yes Bank • PNB • BOB • Google Pay • PhonePe • Paytm • Amazon Pay • CRED
               </p>
             </div>
@@ -814,6 +1078,14 @@ export default function MoneyPlusTracker() {
               style={styles.noteInput}
               value={newTransaction.note}
               onChange={(e) => setNewTransaction(p => ({ ...p, note: e.target.value }))}
+            />
+
+            <p style={styles.sectionLabel}>📅 Date</p>
+            <input
+              type="date"
+              style={{ ...styles.noteInput, marginBottom: '16px' }}
+              value={newTransaction.date}
+              onChange={(e) => setNewTransaction(p => ({ ...p, date: e.target.value }))}
             />
 
             {transactionType === 'expense' && (
@@ -1013,6 +1285,191 @@ export default function MoneyPlusTracker() {
             <button style={{ ...styles.saveBtn, margin: '16px 20px 20px' }} onClick={importSelectedSMS}>
               <span>Import {Object.keys(selectedSMS).filter(k => selectedSMS[k]).length} Transactions</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Budget Edit Modal */}
+      {showBudgetModal && (
+        <div style={styles.modalOverlay}>
+          <div style={{ ...styles.modal, maxHeight: '50vh' }}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>🎯 Set Monthly Budget</h2>
+              <button style={styles.closeBtn} onClick={() => setShowBudgetModal(false)}>
+                <X size={24} color="#B8B8D0" />
+              </button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <div style={styles.amountSection}>
+                <span style={styles.currencySign}>₹</span>
+                <input
+                  type="number"
+                  placeholder="50000"
+                  style={styles.amountInput}
+                  value={budget}
+                  onChange={(e) => setBudget(parseInt(e.target.value) || 0)}
+                />
+              </div>
+              <p style={{ fontSize: '12px', color: '#888', textAlign: 'center', marginBottom: '20px' }}>
+                Set your monthly spending limit to track your budget
+              </p>
+              <button style={styles.saveBtn} onClick={() => setShowBudgetModal(false)}>
+                <Check size={22} color="#fff" />
+                <span>Save Budget</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Card Mapping Modal */}
+      {showCardMappingModal && (
+        <div style={styles.modalOverlay}>
+          <div style={{ ...styles.modal, maxHeight: '80vh' }}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>💳 Card Mapping</h2>
+              <button style={styles.closeBtn} onClick={() => setShowCardMappingModal(false)}>
+                <X size={24} color="#B8B8D0" />
+              </button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <p style={{ fontSize: '13px', color: '#666', marginBottom: '16px' }}>
+                Map your card last 4 digits to automatically detect payment mode from SMS
+              </p>
+
+              {/* Add new card mapping */}
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+                <input
+                  type="text"
+                  placeholder="Last 4 digits"
+                  maxLength={4}
+                  style={{ ...styles.noteInput, flex: 1, marginBottom: 0 }}
+                  value={newCardMapping.last4}
+                  onChange={(e) => setNewCardMapping(p => ({ ...p, last4: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                />
+                <select
+                  style={{ ...styles.noteInput, flex: 1, marginBottom: 0 }}
+                  value={newCardMapping.type}
+                  onChange={(e) => setNewCardMapping(p => ({ ...p, type: e.target.value }))}
+                >
+                  <option value="debit">Debit Card</option>
+                  <option value="credit">Credit Card</option>
+                  <option value="upi">UPI</option>
+                </select>
+                <button
+                  style={{ ...styles.saveBtn, width: 'auto', margin: 0, padding: '12px 16px' }}
+                  onClick={addCardMapping}
+                >
+                  <Plus size={20} color="#fff" />
+                </button>
+              </div>
+
+              {/* Existing mappings */}
+              <div style={{ maxHeight: '300px', overflow: 'auto' }}>
+                {cardMappings.length === 0 ? (
+                  <p style={{ textAlign: 'center', color: '#888', padding: '20px' }}>
+                    No cards mapped yet. Add your first card above.
+                  </p>
+                ) : (
+                  cardMappings.map(card => (
+                    <div key={card.id} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '12px', background: '#f9f9f9', borderRadius: '12px', marginBottom: '8px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '24px' }}>
+                          {card.type === 'credit' ? '💳' : card.type === 'upi' ? '📱' : '🏧'}
+                        </span>
+                        <div>
+                          <div style={{ fontWeight: '600', color: '#5A5A7A' }}>••••{card.last4}</div>
+                          <div style={{ fontSize: '12px', color: '#888', textTransform: 'capitalize' }}>{card.type} Card</div>
+                        </div>
+                      </div>
+                      <button
+                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                        onClick={() => deleteCardMapping(card.id)}
+                      >
+                        <Trash2 size={18} color="#FF6B8A" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Insights Modal */}
+      {showInsightsModal && (
+        <div style={styles.modalOverlay}>
+          <div style={{ ...styles.modal, maxHeight: '85vh' }}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>📊 Monthly Insights</h2>
+              <button style={styles.closeBtn} onClick={() => setShowInsightsModal(false)}>
+                <X size={24} color="#B8B8D0" />
+              </button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              {(() => {
+                const insights = getInsights();
+                const topCat = insights.topCategory ? categories.find(c => c.id === insights.topCategory.id) : null;
+                return (
+                  <>
+                    <div style={{
+                      background: 'linear-gradient(135deg, #FFB6C1 0%, #FF9BB3 100%)',
+                      borderRadius: '20px', padding: '24px', marginBottom: '16px', color: '#fff'
+                    }}>
+                      <div style={{ fontSize: '13px', opacity: 0.9 }}>Total Spent This Month</div>
+                      <div style={{ fontSize: '36px', fontWeight: '800' }}>{formatCurrency(insights.thisMonthTotal)}</div>
+                      <div style={{ fontSize: '12px', marginTop: '8px', opacity: 0.9 }}>
+                        {insights.budgetUsed}% of budget used
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                      <div style={{ background: '#E8F5E9', borderRadius: '16px', padding: '16px' }}>
+                        <div style={{ fontSize: '11px', color: '#4CAF50' }}>Daily Average</div>
+                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#2E7D32' }}>
+                          {formatCurrency(insights.dailyAverage)}
+                        </div>
+                      </div>
+                      <div style={{ background: '#E3F2FD', borderRadius: '16px', padding: '16px' }}>
+                        <div style={{ fontSize: '11px', color: '#2196F3' }}>Transactions</div>
+                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#1565C0' }}>
+                          {insights.transactionCount}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#FFF3E0', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+                      <div style={{ fontSize: '11px', color: '#FF9800' }}>vs Last Month</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ fontSize: '20px', fontWeight: '700', color: insights.trend >= 0 ? '#FF6B6B' : '#4CAF50' }}>
+                          {insights.trend >= 0 ? '↑' : '↓'} {Math.abs(insights.trend)}%
+                        </div>
+                        <span style={{ fontSize: '12px', color: '#888' }}>
+                          ({formatCurrency(insights.lastMonthTotal)} last month)
+                        </span>
+                      </div>
+                    </div>
+
+                    {topCat && (
+                      <div style={{ background: '#F3E5F5', borderRadius: '16px', padding: '16px' }}>
+                        <div style={{ fontSize: '11px', color: '#9C27B0' }}>Top Spending Category</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+                          <span style={{ fontSize: '28px' }}>{iconLibrary[topCat.icon]?.emoji || '📦'}</span>
+                          <div>
+                            <div style={{ fontSize: '16px', fontWeight: '700', color: '#7B1FA2' }}>{topCat.name}</div>
+                            <div style={{ fontSize: '14px', color: '#9C27B0' }}>{formatCurrency(insights.topCategory.amount)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
         </div>
       )}
