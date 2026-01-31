@@ -1,36 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, ChevronLeft, ChevronRight, X, Check, Trash2, TrendingUp, TrendingDown, Search, RefreshCw, Smartphone, Clock, Building2, Download, Edit3, Moon, Sun, CreditCard, Calendar, BarChart3 } from 'lucide-react';
-
-// Storage helper functions (localStorage for web, AsyncStorage for native)
-const Storage = {
-  getItem: async (key) => {
-    try {
-      const value = localStorage.getItem(key);
-      return value ? JSON.parse(value) : null;
-    } catch (e) {
-      console.error('Storage getItem error:', e);
-      return null;
-    }
-  },
-  setItem: async (key, value) => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-      return true;
-    } catch (e) {
-      console.error('Storage setItem error:', e);
-      return false;
-    }
-  },
-  removeItem: async (key) => {
-    try {
-      localStorage.removeItem(key);
-      return true;
-    } catch (e) {
-      console.error('Storage removeItem error:', e);
-      return false;
-    }
-  }
-};
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Alert,
+  Modal,
+  StatusBar,
+  Platform,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Feather } from '@expo/vector-icons';
+import Svg, { Circle } from 'react-native-svg';
 
 // Payment modes
 const paymentModes = [
@@ -100,56 +83,18 @@ const defaultCategories = [
   { id: 'health', name: 'Health', icon: 'hospital', type: 'expense' },
   { id: 'emi', name: 'EMI', icon: 'emi', type: 'expense' },
   { id: 'insurance', name: 'Insurance', icon: 'insurance', type: 'expense' },
-  { id: 'subscription', name: 'Subscriptions', icon: 'movie', type: 'expense' },
-  { id: 'personal', name: 'Personal Care', icon: 'salon', type: 'expense' },
-  { id: 'education', name: 'Education', icon: 'book', type: 'expense' },
-  { id: 'gifts', name: 'Gifts', icon: 'gift', type: 'expense' },
   { id: 'other', name: 'Other', icon: 'other', type: 'expense' },
   { id: 'salary', name: 'Salary', icon: 'salary', type: 'income' },
   { id: 'bonus', name: 'Bonus', icon: 'bonus', type: 'income' },
   { id: 'freelance', name: 'Freelance', icon: 'freelance', type: 'income' },
   { id: 'refund', name: 'Refund', icon: 'refund', type: 'income' },
-  { id: 'interest', name: 'Interest', icon: 'interest', type: 'income' },
-  { id: 'dividend', name: 'Dividend', icon: 'invest', type: 'income' },
 ];
-
-// Helper function to export transactions to CSV
-const exportToCSV = (transactions, categories) => {
-  const headers = ['Date', 'Type', 'Category', 'Note', 'Amount', 'Payment Mode', 'Source'];
-  const rows = transactions.map(t => {
-    const cat = categories.find(c => c.id === t.category);
-    return [
-      t.date,
-      t.type,
-      cat?.name || t.category,
-      `"${t.note.replace(/"/g, '""')}"`,
-      t.amount,
-      t.paymentMode,
-      t.source || 'manual'
-    ].join(',');
-  });
-
-  const csv = [headers.join(','), ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `money-plus-export-${new Date().toISOString().split('T')[0]}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
-// Format date for input
-const formatDateForInput = (date) => {
-  if (!date) return new Date().toISOString().split('T')[0];
-  return date;
-};
 
 // Format currency
 const formatCurrency = (amount) => '₹' + new Intl.NumberFormat('en-IN').format(Math.round(amount));
 const getMonthName = (month) => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][month];
 
-// Sample transactions with SMS source
+// Sample transactions
 const sampleTransactions = [
   { id: 1, amount: 350, note: 'Swiggy - Biryani Paradise', category: 'food', paymentMode: 'upi', date: '2025-01-17', type: 'expense', source: 'sms' },
   { id: 2, amount: 2500, note: 'HP Petrol Pump', category: 'fuel', paymentMode: 'debit', date: '2025-01-17', type: 'expense', source: 'sms' },
@@ -182,56 +127,45 @@ const DonutChart = ({ data, total }) => {
   let cumulativePercent = 0;
 
   return (
-    <div style={{ position: 'relative', width: size, height: size, margin: '20px auto' }}>
-      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={center} cy={center} r={radius} fill="none" stroke="#F5F5F5" strokeWidth={strokeWidth} />
-        {data.map((item, index) => {
-          const percentage = total > 0 ? (item.total / total) * 100 : 0;
-          const strokeDasharray = circumference;
-          const strokeDashoffset = circumference - (percentage / 100) * circumference;
-          const rotation = (cumulativePercent / 100) * 360;
-          cumulativePercent += percentage;
-          return (
-            <circle
-              key={item.id}
-              cx={center}
-              cy={center}
-              r={radius}
-              fill="none"
-              stroke={colors[index % colors.length]}
-              strokeWidth={strokeWidth}
-              strokeDasharray={strokeDasharray}
-              strokeDashoffset={strokeDashoffset}
-              style={{ transform: `rotate(${rotation}deg)`, transformOrigin: 'center' }}
-            />
-          );
-        })}
-      </svg>
-      <div style={{
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        textAlign: 'center',
-        background: '#fff',
-        borderRadius: '50%',
-        width: size - strokeWidth * 2 - 10,
-        height: size - strokeWidth * 2 - 10,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-        <div style={{ fontSize: '11px', color: '#B8B8D0' }}>Total Expenses</div>
-        <div style={{ fontSize: '20px', fontWeight: '800', color: '#5A5A7A' }}>{formatCurrency(total)}</div>
-      </div>
-    </div>
+    <View style={{ alignItems: 'center', marginVertical: 20 }}>
+      <View style={{ position: 'relative', width: size, height: size }}>
+        <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
+          <Circle cx={center} cy={center} r={radius} fill="none" stroke="#F5F5F5" strokeWidth={strokeWidth} />
+          {data.map((item, index) => {
+            const percentage = total > 0 ? (item.total / total) * 100 : 0;
+            const strokeDasharray = circumference;
+            const strokeDashoffset = circumference - (percentage / 100) * circumference;
+            const rotation = (cumulativePercent / 100) * 360;
+            cumulativePercent += percentage;
+            return (
+              <Circle
+                key={item.id}
+                cx={center}
+                cy={center}
+                r={radius}
+                fill="none"
+                stroke={colors[index % colors.length]}
+                strokeWidth={strokeWidth}
+                strokeDasharray={strokeDasharray}
+                strokeDashoffset={strokeDashoffset}
+                rotation={rotation}
+                origin={`${center}, ${center}`}
+              />
+            );
+          })}
+        </Svg>
+        <View style={styles.donutCenter}>
+          <Text style={styles.donutLabel}>Total Expenses</Text>
+          <Text style={styles.donutAmount}>{formatCurrency(total)}</Text>
+        </View>
+      </View>
+    </View>
   );
 };
 
 export default function MoneyPlusTracker() {
   const [transactions, setTransactions] = useState(sampleTransactions);
-  const [categories, setCategories] = useState(defaultCategories);
+  const [categories] = useState(defaultCategories);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editTransaction, setEditTransaction] = useState(null);
@@ -240,7 +174,7 @@ export default function MoneyPlusTracker() {
   const [transactionType, setTransactionType] = useState('expense');
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const [newTransaction, setNewTransaction] = useState({ amount: '', note: '', category: 'food', paymentMode: 'upi', date: new Date().toISOString().split('T')[0] });
+  const [newTransaction, setNewTransaction] = useState({ amount: '', note: '', category: 'food', paymentMode: 'upi' });
   const [budget, setBudget] = useState(50000);
   const [chartView, setChartView] = useState('category');
   const [searchQuery, setSearchQuery] = useState('');
@@ -248,35 +182,18 @@ export default function MoneyPlusTracker() {
   const [smsLoading, setSmsLoading] = useState(false);
   const [selectedSMS, setSelectedSMS] = useState({});
   const [lastSyncDate, setLastSyncDate] = useState('17 Jan 2025');
-  const [darkMode, setDarkMode] = useState(false);
-  const [showBudgetModal, setShowBudgetModal] = useState(false);
-  const [showCardMappingModal, setShowCardMappingModal] = useState(false);
-  const [cardMappings, setCardMappings] = useState([]);
-  const [newCardMapping, setNewCardMapping] = useState({ last4: '', type: 'debit' });
-  const [showInsightsModal, setShowInsightsModal] = useState(false);
-  const [showExportModal, setShowExportModal] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  // Load data from storage on mount
+  const colors = ['#FF6B8A', '#9B6BFF', '#6BAFFF', '#FFB86B', '#6BFF9B', '#FF6BDF'];
+
+  // Load data from AsyncStorage
   useEffect(() => {
     const loadData = async () => {
       try {
-        const savedTransactions = await Storage.getItem('transactions');
-        const savedBudget = await Storage.getItem('budget');
-        const savedCardMappings = await Storage.getItem('cardMappings');
-        const savedDarkMode = await Storage.getItem('darkMode');
-        const savedLastSync = await Storage.getItem('lastSyncDate');
-        const savedCategories = await Storage.getItem('categories');
-
-        if (savedTransactions && savedTransactions.length > 0) {
-          setTransactions(savedTransactions);
-        }
-        if (savedBudget) setBudget(savedBudget);
-        if (savedCardMappings) setCardMappings(savedCardMappings);
-        if (savedDarkMode !== null) setDarkMode(savedDarkMode);
-        if (savedLastSync) setLastSyncDate(savedLastSync);
-        if (savedCategories && savedCategories.length > 0) setCategories(savedCategories);
-
+        const savedTransactions = await AsyncStorage.getItem('transactions');
+        const savedBudget = await AsyncStorage.getItem('budget');
+        if (savedTransactions) setTransactions(JSON.parse(savedTransactions));
+        if (savedBudget) setBudget(JSON.parse(savedBudget));
         setDataLoaded(true);
       } catch (e) {
         console.error('Error loading data:', e);
@@ -286,38 +203,19 @@ export default function MoneyPlusTracker() {
     loadData();
   }, []);
 
-  // Save data to storage whenever it changes
+  // Save transactions
   useEffect(() => {
     if (dataLoaded) {
-      Storage.setItem('transactions', transactions);
+      AsyncStorage.setItem('transactions', JSON.stringify(transactions));
     }
   }, [transactions, dataLoaded]);
 
+  // Save budget
   useEffect(() => {
     if (dataLoaded) {
-      Storage.setItem('budget', budget);
+      AsyncStorage.setItem('budget', JSON.stringify(budget));
     }
   }, [budget, dataLoaded]);
-
-  useEffect(() => {
-    if (dataLoaded) {
-      Storage.setItem('cardMappings', cardMappings);
-    }
-  }, [cardMappings, dataLoaded]);
-
-  useEffect(() => {
-    if (dataLoaded) {
-      Storage.setItem('darkMode', darkMode);
-    }
-  }, [darkMode, dataLoaded]);
-
-  useEffect(() => {
-    if (dataLoaded) {
-      Storage.setItem('categories', categories);
-    }
-  }, [categories, dataLoaded]);
-
-  const colors = ['#FF6B8A', '#9B6BFF', '#6BAFFF', '#FFB86B', '#6BFF9B', '#FF6BDF'];
 
   const monthTransactions = transactions.filter(t => {
     const d = new Date(t.date);
@@ -383,7 +281,7 @@ export default function MoneyPlusTracker() {
 
   const addTransaction = () => {
     const amount = parseFloat(newTransaction.amount);
-    if (!amount || amount <= 0) return alert('Enter valid amount');
+    if (!amount || amount <= 0) return Alert.alert('Error', 'Enter valid amount');
     const cat = categories.find(c => c.id === newTransaction.category);
     setTransactions(prev => [{
       id: Date.now(),
@@ -391,76 +289,19 @@ export default function MoneyPlusTracker() {
       note: newTransaction.note || cat?.name || 'Transaction',
       category: newTransaction.category,
       paymentMode: newTransaction.paymentMode,
-      date: newTransaction.date || new Date().toISOString().split('T')[0],
+      date: new Date().toISOString().split('T')[0],
       type: transactionType,
       source: 'manual',
     }, ...prev]);
-    setNewTransaction({ amount: '', note: '', category: transactionType === 'income' ? 'salary' : 'food', paymentMode: 'upi', date: new Date().toISOString().split('T')[0] });
+    setNewTransaction({ amount: '', note: '', category: transactionType === 'income' ? 'salary' : 'food', paymentMode: 'upi' });
     setShowAddModal(false);
   };
 
-  // Card mapping functions
-  const addCardMapping = () => {
-    if (!newCardMapping.last4 || newCardMapping.last4.length !== 4) {
-      return alert('Enter valid 4-digit card number');
-    }
-    if (cardMappings.some(c => c.last4 === newCardMapping.last4)) {
-      return alert('Card already mapped');
-    }
-    setCardMappings(prev => [...prev, { ...newCardMapping, id: Date.now() }]);
-    setNewCardMapping({ last4: '', type: 'debit' });
-  };
-
-  const deleteCardMapping = (id) => {
-    setCardMappings(prev => prev.filter(c => c.id !== id));
-  };
-
-  // Get payment mode from card last 4 digits
-  const getPaymentModeFromCard = (cardLast4) => {
-    if (!cardLast4) return null;
-    const mapping = cardMappings.find(c => c.last4 === cardLast4);
-    return mapping ? mapping.type : null;
-  };
-
-  // Calculate insights
-  const getInsights = () => {
-    const thisMonthTxns = monthTransactions.filter(t => t.type === 'expense');
-    const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-    const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-    const lastMonthTxns = transactions.filter(t => {
-      const d = new Date(t.date);
-      return d.getMonth() === lastMonth && d.getFullYear() === lastMonthYear && t.type === 'expense';
-    });
-
-    const thisMonthTotal = thisMonthTxns.reduce((s, t) => s + t.amount, 0);
-    const lastMonthTotal = lastMonthTxns.reduce((s, t) => s + t.amount, 0);
-    const dailyAverage = thisMonthTotal / (new Date().getDate());
-
-    // Top spending category
-    const catSpending = {};
-    thisMonthTxns.forEach(t => {
-      catSpending[t.category] = (catSpending[t.category] || 0) + t.amount;
-    });
-    const topCategory = Object.entries(catSpending).sort((a, b) => b[1] - a[1])[0];
-
-    // Spending trend
-    const trend = lastMonthTotal > 0 ? ((thisMonthTotal - lastMonthTotal) / lastMonthTotal * 100).toFixed(1) : 0;
-
-    return {
-      thisMonthTotal,
-      lastMonthTotal,
-      dailyAverage,
-      topCategory: topCategory ? { id: topCategory[0], amount: topCategory[1] } : null,
-      trend,
-      transactionCount: thisMonthTxns.length,
-      budgetUsed: ((thisMonthTotal / budget) * 100).toFixed(1)
-    };
-  };
-
   const deleteTransaction = (id) => {
-    if (confirm('Delete this transaction?')) {
-      setTransactions(prev => prev.filter(t => t.id !== id));
-    }
+    Alert.alert('Delete', 'Delete this transaction?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => setTransactions(prev => prev.filter(t => t.id !== id)) }
+    ]);
   };
 
   const openEditModal = (t) => {
@@ -471,9 +312,9 @@ export default function MoneyPlusTracker() {
   const saveEditedTransaction = () => {
     if (!editTransaction) return;
     const amount = parseFloat(editTransaction.amount);
-    if (!amount || amount <= 0) return alert('Enter valid amount');
-    setTransactions(prev => prev.map(t => 
-      t.id === editTransaction.id 
+    if (!amount || amount <= 0) return Alert.alert('Error', 'Enter valid amount');
+    setTransactions(prev => prev.map(t =>
+      t.id === editTransaction.id
         ? { ...t, amount, note: editTransaction.note, category: editTransaction.category, paymentMode: editTransaction.paymentMode }
         : t
     ));
@@ -506,7 +347,7 @@ export default function MoneyPlusTracker() {
 
   const importSelectedSMS = () => {
     const selected = sampleSMSToImport.filter(sms => selectedSMS[sms.id]);
-    if (selected.length === 0) return alert('Select at least one transaction');
+    if (selected.length === 0) return Alert.alert('Error', 'Select at least one transaction');
     const newTxns = selected.map(sms => ({
       id: Date.now() + Math.random(),
       amount: sms.amount,
@@ -520,7 +361,7 @@ export default function MoneyPlusTracker() {
     setTransactions(prev => [...newTxns, ...prev]);
     setShowSMSModal(false);
     setSelectedSMS({});
-    alert(`${selected.length} transactions imported!`);
+    Alert.alert('Success', `${selected.length} transactions imported!`);
   };
 
   const getDetailTransactions = () => {
@@ -531,175 +372,159 @@ export default function MoneyPlusTracker() {
     return monthTransactions.filter(t => t.paymentMode === detailView.id && t.type === 'expense');
   };
 
-  const theme = darkMode ? {
-    bg: 'linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%)',
-    card: '#1e1e3f',
-    text: '#e0e0e0',
-    textMuted: '#888',
-    border: '#333'
-  } : {
-    bg: 'linear-gradient(180deg, #FFF9FC 0%, #FFF5F8 50%, #FFEEF4 100%)',
-    card: '#fff',
-    text: '#5A5A7A',
-    textMuted: '#B8B8D0',
-    border: '#f5f5f5'
-  };
-
   return (
-    <div style={{ ...styles.container, background: theme.bg }}>
-      {/* Background decorations */}
-      <div style={styles.bgDecor1} />
-      <div style={styles.bgDecor2} />
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFF9FC" />
 
       {/* Header */}
-      <header style={styles.header}>
-        <h1 style={styles.appTitle}>💰 Money+</h1>
-        <div style={styles.monthSelector}>
-          <button style={styles.monthBtn} onClick={prevMonth}><ChevronLeft size={18} /></button>
-          <span style={styles.monthText}>{getMonthName(currentMonth).slice(0, 3)} {currentYear}</span>
-          <button style={styles.monthBtn} onClick={nextMonth}><ChevronRight size={18} /></button>
-        </div>
-      </header>
+      <View style={styles.header}>
+        <Text style={styles.appTitle}>💰 Money+</Text>
+        <View style={styles.monthSelector}>
+          <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}>
+            <Feather name="chevron-left" size={18} color="#FF9BB3" />
+          </TouchableOpacity>
+          <Text style={styles.monthText}>{getMonthName(currentMonth).slice(0, 3)} {currentYear}</Text>
+          <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}>
+            <Feather name="chevron-right" size={18} color="#FF9BB3" />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Main Content */}
-      <main style={styles.main}>
+      <ScrollView style={styles.main} showsVerticalScrollIndicator={false}>
         {/* HOME TAB */}
         {activeTab === 'home' && (
           <>
             {/* Balance Card */}
-            <div style={styles.balanceCard}>
-              <div style={styles.balanceLabel}>Total Balance</div>
-              <div style={styles.balanceAmount}>{formatCurrency(balance)}</div>
-              <div style={styles.balanceRow}>
-                <div style={styles.incomeBox}>
-                  <TrendingUp size={16} color="#4CAF50" />
-                  <div>
-                    <div style={styles.miniLabel}>Income</div>
-                    <div style={styles.incomeAmount}>{formatCurrency(totalIncome)}</div>
-                  </div>
-                </div>
-                <div style={styles.expenseBox}>
-                  <TrendingDown size={16} color="#FF6B8A" />
-                  <div>
-                    <div style={styles.miniLabel}>Expense</div>
-                    <div style={styles.expenseAmount}>{formatCurrency(totalExpense)}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <View style={styles.balanceCard}>
+              <Text style={styles.balanceLabel}>Total Balance</Text>
+              <Text style={styles.balanceAmount}>{formatCurrency(balance)}</Text>
+              <View style={styles.balanceRow}>
+                <View style={styles.incomeBox}>
+                  <Feather name="trending-up" size={16} color="#4CAF50" />
+                  <View>
+                    <Text style={styles.miniLabel}>Income</Text>
+                    <Text style={styles.incomeAmount}>{formatCurrency(totalIncome)}</Text>
+                  </View>
+                </View>
+                <View style={styles.expenseBox}>
+                  <Feather name="trending-down" size={16} color="#FF6B8A" />
+                  <View>
+                    <Text style={styles.miniLabel}>Expense</Text>
+                    <Text style={styles.expenseAmount}>{formatCurrency(totalExpense)}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
 
             {/* SMS Sync Button */}
-            <button style={styles.syncButton} onClick={syncSMS} disabled={smsLoading}>
-              {smsLoading ? (
-                <RefreshCw size={18} color="#FF9BB3" style={{ animation: 'spin 1s linear infinite' }} />
-              ) : (
-                <Smartphone size={18} color="#FF9BB3" />
-              )}
-              <span style={styles.syncButtonText}>
+            <TouchableOpacity style={styles.syncButton} onPress={syncSMS} disabled={smsLoading}>
+              <Feather name={smsLoading ? "refresh-cw" : "smartphone"} size={18} color="#FF9BB3" />
+              <Text style={styles.syncButtonText}>
                 {smsLoading ? 'Scanning SMS...' : 'Sync Bank SMS'}
-              </span>
-              <span style={styles.syncDate}>Last: {lastSyncDate}</span>
-            </button>
+              </Text>
+              <Text style={styles.syncDate}>Last: {lastSyncDate}</Text>
+            </TouchableOpacity>
 
             {/* Budget Progress */}
-            <div style={styles.budgetSection}>
-              <div style={styles.budgetHeader}>
-                <span style={styles.budgetTitle}>Monthly Budget</span>
-                <span style={styles.budgetValue}>{formatCurrency(totalExpense)} / {formatCurrency(budget)}</span>
-              </div>
-              <div style={styles.budgetTrack}>
-                <div style={{
-                  ...styles.budgetFill,
+            <View style={styles.budgetSection}>
+              <View style={styles.budgetHeader}>
+                <Text style={styles.budgetTitle}>Monthly Budget</Text>
+                <Text style={styles.budgetValue}>{formatCurrency(totalExpense)} / {formatCurrency(budget)}</Text>
+              </View>
+              <View style={styles.budgetTrack}>
+                <View style={[styles.budgetFill, {
                   width: `${Math.min((totalExpense / budget) * 100, 100)}%`,
-                  background: totalExpense > budget ? '#FF6B6B' : totalExpense > budget * 0.8 ? '#FFB347' : '#4CAF50'
-                }} />
-              </div>
-              <div style={styles.budgetRemaining}>
+                  backgroundColor: totalExpense > budget ? '#FF6B6B' : totalExpense > budget * 0.8 ? '#FFB347' : '#4CAF50'
+                }]} />
+              </View>
+              <Text style={[styles.budgetRemaining, { color: totalExpense > budget ? '#FF6B6B' : '#4CAF50' }]}>
                 {totalExpense > budget
-                  ? <span style={{ color: '#FF6B6B' }}>⚠️ Over budget by {formatCurrency(totalExpense - budget)}</span>
-                  : <span style={{ color: '#4CAF50' }}>✓ {formatCurrency(budget - totalExpense)} remaining</span>
+                  ? `⚠️ Over budget by ${formatCurrency(totalExpense - budget)}`
+                  : `✓ ${formatCurrency(budget - totalExpense)} remaining`
                 }
-              </div>
-            </div>
+              </Text>
+            </View>
 
             {/* Payment Mode Summary */}
-            <div style={styles.paymentSummary}>
+            <View style={styles.paymentSummary}>
               {paymentModes.slice(0, 4).map(mode => {
                 const modeTotal = monthTransactions.filter(t => t.paymentMode === mode.id && t.type === 'expense').reduce((s, t) => s + t.amount, 0);
                 return (
-                  <div key={mode.id} style={styles.paymentModeCard}>
-                    <span style={{ fontSize: '20px' }}>{mode.emoji}</span>
-                    <span style={styles.paymentModeName}>{mode.name.split(' ')[0]}</span>
-                    <span style={styles.paymentModeAmount}>{formatCurrency(modeTotal)}</span>
-                  </div>
+                  <View key={mode.id} style={styles.paymentModeCard}>
+                    <Text style={{ fontSize: 20 }}>{mode.emoji}</Text>
+                    <Text style={styles.paymentModeName}>{mode.name.split(' ')[0]}</Text>
+                    <Text style={styles.paymentModeAmount}>{formatCurrency(modeTotal)}</Text>
+                  </View>
                 );
               })}
-            </div>
+            </View>
 
             {/* Search */}
-            <div style={styles.searchBox}>
-              <Search size={18} color="#B8B8D0" />
-              <input
-                type="text"
+            <View style={styles.searchBox}>
+              <Feather name="search" size={18} color="#B8B8D0" />
+              <TextInput
                 placeholder="Search transactions..."
+                placeholderTextColor="#B8B8D0"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChangeText={setSearchQuery}
                 style={styles.searchInput}
               />
-            </div>
+            </View>
 
             {/* Transactions */}
-            <div style={styles.sectionTitle}>Recent Transactions</div>
+            <Text style={styles.sectionTitle}>Recent Transactions</Text>
             {filteredTransactions.length === 0 ? (
-              <div style={styles.emptyState}>
-                <div style={styles.emptyEmoji}>📝</div>
-                <p style={styles.emptyText}>No transactions yet!</p>
-                <p style={styles.emptySubtext}>Tap + or sync SMS to add</p>
-              </div>
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyEmoji}>📝</Text>
+                <Text style={styles.emptyText}>No transactions yet!</Text>
+                <Text style={styles.emptySubtext}>Tap + or sync SMS to add</Text>
+              </View>
             ) : (
               groupByDate(filteredTransactions).map((group) => (
-                <div key={group.date} style={styles.dateGroup}>
-                  <div style={styles.dateHeader}>
-                    <span style={styles.dateHeaderText}>{formatDateHeader(group.date)}</span>
-                    <span style={styles.dateHeaderAmount}>
-                      {group.totalExpense > 0 && <span style={{ color: '#FF6B8A' }}>-{formatCurrency(group.totalExpense)}</span>}
-                      {group.totalExpense > 0 && group.totalIncome > 0 && ' / '}
-                      {group.totalIncome > 0 && <span style={{ color: '#4CAF50' }}>+{formatCurrency(group.totalIncome)}</span>}
-                    </span>
-                  </div>
+                <View key={group.date} style={styles.dateGroup}>
+                  <View style={styles.dateHeader}>
+                    <Text style={styles.dateHeaderText}>{formatDateHeader(group.date)}</Text>
+                    <View style={{ flexDirection: 'row' }}>
+                      {group.totalExpense > 0 && <Text style={{ color: '#FF6B8A', fontSize: 12 }}>-{formatCurrency(group.totalExpense)}</Text>}
+                      {group.totalExpense > 0 && group.totalIncome > 0 && <Text style={{ fontSize: 12 }}> / </Text>}
+                      {group.totalIncome > 0 && <Text style={{ color: '#4CAF50', fontSize: 12 }}>+{formatCurrency(group.totalIncome)}</Text>}
+                    </View>
+                  </View>
                   {group.transactions.map((t) => {
                     const cat = categories.find(c => c.id === t.category) || categories[0];
                     const iconData = iconLibrary[cat.icon] || iconLibrary.other;
                     const payMode = paymentModes.find(p => p.id === t.paymentMode) || paymentModes[0];
                     return (
-                      <div key={t.id} style={{ ...styles.transactionItem, cursor: 'pointer' }} onClick={() => openEditModal(t)}>
-                        <div style={{ ...styles.transactionIcon, background: iconData.bg }}>
-                          <span style={{ fontSize: '22px' }}>{iconData.emoji}</span>
-                        </div>
-                        <div style={styles.transactionInfo}>
-                          <span style={styles.transactionNote}>{t.note}</span>
-                          <div style={styles.transactionMeta}>
-                            <span style={{ ...styles.paymentBadge, background: payMode.bg, color: payMode.color }}>
-                              {payMode.emoji} {payMode.name.split(' ')[0]}
-                            </span>
+                      <TouchableOpacity key={t.id} style={styles.transactionItem} onPress={() => openEditModal(t)}>
+                        <View style={[styles.transactionIcon, { backgroundColor: iconData.bg }]}>
+                          <Text style={{ fontSize: 22 }}>{iconData.emoji}</Text>
+                        </View>
+                        <View style={styles.transactionInfo}>
+                          <Text style={styles.transactionNote} numberOfLines={1}>{t.note}</Text>
+                          <View style={styles.transactionMeta}>
+                            <View style={[styles.paymentBadge, { backgroundColor: payMode.bg }]}>
+                              <Text style={[styles.paymentBadgeText, { color: payMode.color }]}>{payMode.emoji} {payMode.name.split(' ')[0]}</Text>
+                            </View>
                             {t.source === 'sms' && (
-                              <span style={styles.smsBadge}>📱 Auto</span>
+                              <View style={styles.smsBadge}>
+                                <Text style={styles.smsBadgeText}>📱 Auto</Text>
+                              </View>
                             )}
-                            <span style={styles.categoryLabel}>{cat.name}</span>
-                          </div>
-                        </div>
-                        <div style={styles.transactionRight}>
-                          <span style={{ ...styles.transactionAmount, color: t.type === 'income' ? '#4CAF50' : '#FF6B8A' }}>
+                          </View>
+                        </View>
+                        <View style={styles.transactionRight}>
+                          <Text style={[styles.transactionAmount, { color: t.type === 'income' ? '#4CAF50' : '#FF6B8A' }]}>
                             {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                          </span>
-                          <button style={{ ...styles.deleteBtn, cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); deleteTransaction(t.id); }}>
-                            <Trash2 size={14} color="#FF6B8A" />
-                          </button>
-                        </div>
-                      </div>
+                          </Text>
+                          <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteTransaction(t.id)}>
+                            <Feather name="trash-2" size={14} color="#FF6B8A" />
+                          </TouchableOpacity>
+                        </View>
+                      </TouchableOpacity>
                     );
                   })}
-                </div>
+                </View>
               ))
             )}
           </>
@@ -709,101 +534,96 @@ export default function MoneyPlusTracker() {
         {activeTab === 'charts' && (
           <>
             {detailView ? (
-              <div>
-                <div style={styles.detailHeader}>
-                  <button style={styles.backBtn} onClick={() => setDetailView(null)}>
-                    <ChevronLeft size={24} color="#5A5A7A" />
-                  </button>
-                  <div style={{
-                    width: '44px', height: '44px', borderRadius: '12px',
-                    background: detailView.type === 'category'
+              <View>
+                <View style={styles.detailHeader}>
+                  <TouchableOpacity style={styles.backBtn} onPress={() => setDetailView(null)}>
+                    <Feather name="chevron-left" size={24} color="#5A5A7A" />
+                  </TouchableOpacity>
+                  <View style={[styles.detailIcon, {
+                    backgroundColor: detailView.type === 'category'
                       ? (iconLibrary[detailView.icon]?.bg || '#f5f5f5')
-                      : (detailView.bg || '#f5f5f5'),
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}>
-                    <span style={{ fontSize: '22px' }}>
+                      : (detailView.bg || '#f5f5f5')
+                  }]}>
+                    <Text style={{ fontSize: 22 }}>
                       {detailView.type === 'category'
                         ? (iconLibrary[detailView.icon]?.emoji || '📦')
                         : (detailView.emoji || '💳')}
-                    </span>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: '#5A5A7A' }}>{detailView.name}</div>
-                    <div style={{ fontSize: '12px', color: '#B8B8D0' }}>
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.detailTitle}>{detailView.name}</Text>
+                    <Text style={styles.detailSubtitle}>
                       {detailView.type === 'category' ? 'Category' : 'Payment Mode'} Details
-                    </div>
-                  </div>
-                </div>
+                    </Text>
+                  </View>
+                </View>
 
-                <div style={{
-                  background: detailView.type === 'category'
+                <View style={[styles.detailSummary, {
+                  backgroundColor: detailView.type === 'category'
                     ? (iconLibrary[detailView.icon]?.bg || '#f5f5f5')
-                    : (detailView.bg || '#f5f5f5'),
-                  borderRadius: '20px', padding: '24px', marginBottom: '24px', textAlign: 'center'
-                }}>
-                  <div style={{ fontSize: '13px', color: '#888', marginBottom: '6px' }}>Total Spent</div>
-                  <div style={{ fontSize: '36px', fontWeight: '800', color: '#5A5A7A' }}>
+                    : (detailView.bg || '#f5f5f5')
+                }]}>
+                  <Text style={styles.detailSummaryLabel}>Total Spent</Text>
+                  <Text style={styles.detailSummaryAmount}>
                     {formatCurrency(getDetailTransactions().reduce((s, t) => s + t.amount, 0))}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#888', marginTop: '6px' }}>
+                  </Text>
+                  <Text style={styles.detailSummaryCount}>
                     {getDetailTransactions().length} transactions this month
-                  </div>
-                </div>
+                  </Text>
+                </View>
 
-                <div style={styles.sectionTitle}>All Transactions</div>
+                <Text style={styles.sectionTitle}>All Transactions</Text>
                 {getDetailTransactions().length === 0 ? (
-                  <div style={styles.emptyState}>
-                    <div style={styles.emptyEmoji}>📭</div>
-                    <p style={styles.emptyText}>No transactions</p>
-                  </div>
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyEmoji}>📭</Text>
+                    <Text style={styles.emptyText}>No transactions</Text>
+                  </View>
                 ) : (
                   groupByDate(getDetailTransactions()).map((group) => (
-                    <div key={group.date} style={styles.dateGroup}>
-                      <div style={styles.dateHeader}>
-                        <span style={styles.dateHeaderText}>{formatDateHeader(group.date)}</span>
-                        <span style={{ ...styles.dateHeaderAmount, color: '#FF6B8A' }}>-{formatCurrency(group.totalExpense)}</span>
-                      </div>
+                    <View key={group.date} style={styles.dateGroup}>
+                      <View style={styles.dateHeader}>
+                        <Text style={styles.dateHeaderText}>{formatDateHeader(group.date)}</Text>
+                        <Text style={{ color: '#FF6B8A', fontSize: 12 }}>-{formatCurrency(group.totalExpense)}</Text>
+                      </View>
                       {group.transactions.map(t => {
                         const cat = categories.find(c => c.id === t.category) || categories[0];
                         const iconData = iconLibrary[cat.icon] || iconLibrary.other;
                         const payMode = paymentModes.find(p => p.id === t.paymentMode) || paymentModes[0];
                         return (
-                          <div key={t.id} style={{ ...styles.transactionItem, cursor: 'pointer' }} onClick={() => openEditModal(t)}>
-                            <div style={{ ...styles.transactionIcon, background: iconData.bg }}>
-                              <span style={{ fontSize: '22px' }}>{iconData.emoji}</span>
-                            </div>
-                            <div style={styles.transactionInfo}>
-                              <span style={styles.transactionNote}>{t.note}</span>
-                              <div style={styles.transactionMeta}>
-                                <span style={{ ...styles.paymentBadge, background: payMode.bg, color: payMode.color }}>
-                                  {payMode.emoji} {payMode.name.split(' ')[0]}
-                                </span>
-                              </div>
-                            </div>
-                            <span style={{ ...styles.transactionAmount, color: '#FF6B8A' }}>-{formatCurrency(t.amount)}</span>
-                          </div>
+                          <TouchableOpacity key={t.id} style={styles.transactionItem} onPress={() => openEditModal(t)}>
+                            <View style={[styles.transactionIcon, { backgroundColor: iconData.bg }]}>
+                              <Text style={{ fontSize: 22 }}>{iconData.emoji}</Text>
+                            </View>
+                            <View style={styles.transactionInfo}>
+                              <Text style={styles.transactionNote} numberOfLines={1}>{t.note}</Text>
+                              <View style={[styles.paymentBadge, { backgroundColor: payMode.bg }]}>
+                                <Text style={[styles.paymentBadgeText, { color: payMode.color }]}>{payMode.emoji} {payMode.name.split(' ')[0]}</Text>
+                              </View>
+                            </View>
+                            <Text style={[styles.transactionAmount, { color: '#FF6B8A' }]}>-{formatCurrency(t.amount)}</Text>
+                          </TouchableOpacity>
                         );
                       })}
-                    </div>
+                    </View>
                   ))
                 )}
-              </div>
+              </View>
             ) : (
               <>
-                <div style={styles.chartToggle}>
-                  <button
-                    style={{ ...styles.chartToggleBtn, background: chartView === 'category' ? '#FF9BB3' : '#f5f5f5', color: chartView === 'category' ? '#fff' : '#666' }}
-                    onClick={() => setChartView('category')}
+                <View style={styles.chartToggle}>
+                  <TouchableOpacity
+                    style={[styles.chartToggleBtn, { backgroundColor: chartView === 'category' ? '#FF9BB3' : '#f5f5f5' }]}
+                    onPress={() => setChartView('category')}
                   >
-                    📁 By Category
-                  </button>
-                  <button
-                    style={{ ...styles.chartToggleBtn, background: chartView === 'payment' ? '#FF9BB3' : '#f5f5f5', color: chartView === 'payment' ? '#fff' : '#666' }}
-                    onClick={() => setChartView('payment')}
+                    <Text style={{ color: chartView === 'category' ? '#fff' : '#666', fontWeight: '600' }}>📁 By Category</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.chartToggleBtn, { backgroundColor: chartView === 'payment' ? '#FF9BB3' : '#f5f5f5' }]}
+                    onPress={() => setChartView('payment')}
                   >
-                    💳 By Payment
-                  </button>
-                </div>
+                    <Text style={{ color: chartView === 'payment' ? '#fff' : '#666', fontWeight: '600' }}>💳 By Payment</Text>
+                  </TouchableOpacity>
+                </View>
 
                 {chartView === 'category' ? (
                   categoryStats.length > 0 ? (
@@ -813,73 +633,73 @@ export default function MoneyPlusTracker() {
                         const iconData = iconLibrary[cat.icon] || iconLibrary.other;
                         const percentage = totalExpense > 0 ? ((cat.total / totalExpense) * 100).toFixed(0) : 0;
                         return (
-                          <div
+                          <TouchableOpacity
                             key={cat.id}
                             style={styles.statsItem}
-                            onClick={() => setDetailView({ type: 'category', id: cat.id, name: cat.name, icon: cat.icon })}
+                            onPress={() => setDetailView({ type: 'category', id: cat.id, name: cat.name, icon: cat.icon })}
                           >
-                            <div style={{ ...styles.statsIcon, background: iconData.bg }}>
-                              <span style={{ fontSize: '20px' }}>{iconData.emoji}</span>
-                            </div>
-                            <div style={styles.statsInfo}>
-                              <span style={styles.statsName}>{cat.name}</span>
-                              <div style={styles.statsBar}>
-                                <div style={{ ...styles.statsBarFill, width: `${percentage}%`, background: colors[index % colors.length] }} />
-                              </div>
-                            </div>
-                            <div style={styles.statsRight}>
-                              <span style={{ ...styles.statsPercent, color: colors[index % colors.length] }}>{percentage}%</span>
-                              <span style={styles.statsAmount}>{formatCurrency(cat.total)}</span>
-                            </div>
-                            <ChevronRight size={16} color="#ccc" />
-                          </div>
+                            <View style={[styles.statsIcon, { backgroundColor: iconData.bg }]}>
+                              <Text style={{ fontSize: 20 }}>{iconData.emoji}</Text>
+                            </View>
+                            <View style={styles.statsInfo}>
+                              <Text style={styles.statsName}>{cat.name}</Text>
+                              <View style={styles.statsBar}>
+                                <View style={[styles.statsBarFill, { width: `${percentage}%`, backgroundColor: colors[index % colors.length] }]} />
+                              </View>
+                            </View>
+                            <View style={styles.statsRight}>
+                              <Text style={[styles.statsPercent, { color: colors[index % colors.length] }]}>{percentage}%</Text>
+                              <Text style={styles.statsAmount}>{formatCurrency(cat.total)}</Text>
+                            </View>
+                            <Feather name="chevron-right" size={16} color="#ccc" />
+                          </TouchableOpacity>
                         );
                       })}
                     </>
                   ) : (
-                    <div style={styles.emptyState}>
-                      <div style={styles.emptyEmoji}>📊</div>
-                      <p style={styles.emptyText}>No expense data</p>
-                    </div>
+                    <View style={styles.emptyState}>
+                      <Text style={styles.emptyEmoji}>📊</Text>
+                      <Text style={styles.emptyText}>No expense data</Text>
+                    </View>
                   )
                 ) : (
                   paymentStats.length > 0 ? (
                     <>
-                      <div style={styles.paymentChartHeader}>
-                        <span>Payment Mode Analysis</span>
-                        <span style={{ fontSize: '12px', color: '#888' }}>Total: {formatCurrency(totalExpense)}</span>
-                      </div>
-                      {paymentStats.map((mode, index) => {
+                      <View style={styles.paymentChartHeader}>
+                        <Text style={{ fontWeight: '600' }}>Payment Mode Analysis</Text>
+                        <Text style={{ fontSize: 12, color: '#888' }}>Total: {formatCurrency(totalExpense)}</Text>
+                      </View>
+                      {paymentStats.map((mode) => {
                         const percentage = totalExpense > 0 ? ((mode.total / totalExpense) * 100).toFixed(0) : 0;
                         return (
-                          <div
+                          <TouchableOpacity
                             key={mode.id}
                             style={styles.statsItem}
-                            onClick={() => setDetailView({ type: 'payment', id: mode.id, name: mode.name, emoji: mode.emoji, color: mode.color, bg: mode.bg })}
+                            onPress={() => setDetailView({ type: 'payment', id: mode.id, name: mode.name, emoji: mode.emoji, color: mode.color, bg: mode.bg })}
                           >
-                            <div style={{ ...styles.statsIcon, background: mode.bg }}>
-                              <span style={{ fontSize: '24px' }}>{mode.emoji}</span>
-                            </div>
-                            <div style={styles.statsInfo}>
-                              <span style={styles.statsName}>{mode.name}</span>
-                              <div style={styles.statsBar}>
-                                <div style={{ ...styles.statsBarFill, width: `${percentage}%`, background: mode.color }} />
-                              </div>
-                            </div>
-                            <div style={styles.statsRight}>
-                              <span style={{ ...styles.statsPercent, color: mode.color }}>{percentage}%</span>
-                              <span style={styles.statsAmount}>{formatCurrency(mode.total)}</span>
-                            </div>
-                            <ChevronRight size={16} color="#ccc" />
-                          </div>
+                            <View style={[styles.statsIcon, { backgroundColor: mode.bg }]}>
+                              <Text style={{ fontSize: 24 }}>{mode.emoji}</Text>
+                            </View>
+                            <View style={styles.statsInfo}>
+                              <Text style={styles.statsName}>{mode.name}</Text>
+                              <View style={styles.statsBar}>
+                                <View style={[styles.statsBarFill, { width: `${percentage}%`, backgroundColor: mode.color }]} />
+                              </View>
+                            </View>
+                            <View style={styles.statsRight}>
+                              <Text style={[styles.statsPercent, { color: mode.color }]}>{percentage}%</Text>
+                              <Text style={styles.statsAmount}>{formatCurrency(mode.total)}</Text>
+                            </View>
+                            <Feather name="chevron-right" size={16} color="#ccc" />
+                          </TouchableOpacity>
                         );
                       })}
                     </>
                   ) : (
-                    <div style={styles.emptyState}>
-                      <div style={styles.emptyEmoji}>💳</div>
-                      <p style={styles.emptyText}>No payment data</p>
-                    </div>
+                    <View style={styles.emptyState}>
+                      <Text style={styles.emptyEmoji}>💳</Text>
+                      <Text style={styles.emptyText}>No payment data</Text>
+                    </View>
                   )
                 )}
               </>
@@ -890,718 +710,485 @@ export default function MoneyPlusTracker() {
         {/* SETTINGS TAB */}
         {activeTab === 'settings' && (
           <>
-            {/* Appearance Section */}
-            <div style={{ ...styles.settingsSection, background: theme.card }}>
-              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>🎨 Appearance</div>
-              <div style={styles.settingsItem} onClick={() => setDarkMode(!darkMode)}>
-                {darkMode ? <Moon size={24} color="#9B6BFF" /> : <Sun size={24} color="#FFB86B" />}
-                <div style={styles.settingsItemInfo}>
-                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Dark Mode</div>
-                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>{darkMode ? 'Enabled' : 'Disabled'}</div>
-                </div>
-                <div style={{
-                  width: '50px', height: '28px', borderRadius: '14px',
-                  background: darkMode ? '#9B6BFF' : '#ddd',
-                  position: 'relative', transition: 'all 0.3s'
-                }}>
-                  <div style={{
-                    width: '24px', height: '24px', borderRadius: '50%',
-                    background: '#fff', position: 'absolute', top: '2px',
-                    left: darkMode ? '24px' : '2px', transition: 'all 0.3s'
-                  }} />
-                </div>
-              </div>
-            </div>
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsSectionTitle}>📱 SMS Auto-Sync</Text>
+              <TouchableOpacity style={styles.settingsItem} onPress={syncSMS}>
+                <Feather name="refresh-cw" size={24} color="#FF9BB3" />
+                <View style={styles.settingsItemInfo}>
+                  <Text style={styles.settingsItemTitle}>Sync Bank SMS</Text>
+                  <Text style={styles.settingsItemDesc}>Import transactions from bank messages</Text>
+                </View>
+                <Feather name="chevron-right" size={20} color="#ccc" />
+              </TouchableOpacity>
+              <View style={styles.settingsItem}>
+                <Feather name="clock" size={24} color="#9B6BFF" />
+                <View style={styles.settingsItemInfo}>
+                  <Text style={styles.settingsItemTitle}>Last Synced</Text>
+                  <Text style={styles.settingsItemDesc}>{lastSyncDate}, 10:30 AM</Text>
+                </View>
+              </View>
+            </View>
 
-            {/* SMS Section */}
-            <div style={{ ...styles.settingsSection, background: theme.card }}>
-              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>📱 SMS Auto-Sync</div>
-              <div style={styles.settingsItem} onClick={syncSMS}>
-                <RefreshCw size={24} color="#FF9BB3" />
-                <div style={styles.settingsItemInfo}>
-                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Sync Bank SMS</div>
-                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>Import transactions from bank messages</div>
-                </div>
-                <ChevronRight size={20} color="#ccc" />
-              </div>
-              <div style={styles.settingsItem}>
-                <Clock size={24} color="#9B6BFF" />
-                <div style={styles.settingsItemInfo}>
-                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Last Synced</div>
-                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>{lastSyncDate}, 10:30 AM</div>
-                </div>
-              </div>
-            </div>
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsSectionTitle}>🎯 Budget Settings</Text>
+              <View style={styles.budgetSetting}>
+                <Text style={styles.settingLabel}>Monthly Budget</Text>
+                <View style={styles.budgetInputRow}>
+                  <Text style={styles.rupeeSign}>₹</Text>
+                  <TextInput
+                    style={styles.budgetInputField}
+                    value={budget.toString()}
+                    onChangeText={(text) => setBudget(parseInt(text) || 0)}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+            </View>
 
-            {/* Budget Section */}
-            <div style={{ ...styles.settingsSection, background: theme.card }}>
-              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>🎯 Budget Settings</div>
-              <div style={styles.settingsItem} onClick={() => setShowBudgetModal(true)}>
-                <BarChart3 size={24} color="#4CAF50" />
-                <div style={styles.settingsItemInfo}>
-                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Monthly Budget</div>
-                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>{formatCurrency(budget)}</div>
-                </div>
-                <Edit3 size={20} color="#ccc" />
-              </div>
-              <div style={styles.settingsItem} onClick={() => setShowInsightsModal(true)}>
-                <TrendingUp size={24} color="#FF9BB3" />
-                <div style={styles.settingsItemInfo}>
-                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Monthly Insights</div>
-                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>View spending analytics</div>
-                </div>
-                <ChevronRight size={20} color="#ccc" />
-              </div>
-            </div>
-
-            {/* Card Mapping Section */}
-            <div style={{ ...styles.settingsSection, background: theme.card }}>
-              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>💳 Card Mapping</div>
-              <div style={styles.settingsItem} onClick={() => setShowCardMappingModal(true)}>
-                <CreditCard size={24} color="#2196F3" />
-                <div style={styles.settingsItemInfo}>
-                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Manage Cards</div>
-                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>{cardMappings.length} cards mapped</div>
-                </div>
-                <ChevronRight size={20} color="#ccc" />
-              </div>
-            </div>
-
-            {/* Export Section */}
-            <div style={{ ...styles.settingsSection, background: theme.card }}>
-              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>📤 Data Export</div>
-              <div style={styles.settingsItem} onClick={() => exportToCSV(transactions, categories)}>
-                <Download size={24} color="#6BAFFF" />
-                <div style={styles.settingsItemInfo}>
-                  <div style={{ ...styles.settingsItemTitle, color: theme.text }}>Export to CSV</div>
-                  <div style={{ ...styles.settingsItemDesc, color: theme.textMuted }}>Download all transactions</div>
-                </div>
-                <ChevronRight size={20} color="#ccc" />
-              </div>
-            </div>
-
-            {/* Categories Section */}
-            <div style={{ ...styles.settingsSection, background: theme.card }}>
-              <div style={styles.catHeader}>
-                <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>📁 Categories</div>
-              </div>
-              <div style={styles.catGrid}>
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsSectionTitle}>📁 Categories</Text>
+              <View style={styles.catGrid}>
                 {categories.filter(c => c.type === 'expense').slice(0, 8).map(cat => {
                   const iconData = iconLibrary[cat.icon] || iconLibrary.other;
                   return (
-                    <div key={cat.id} style={styles.catItem}>
-                      <div style={{ ...styles.catIcon, background: iconData.bg }}>
-                        <span style={{ fontSize: '24px' }}>{iconData.emoji}</span>
-                      </div>
-                      <span style={{ ...styles.catName, color: theme.text }}>{cat.name}</span>
-                    </div>
+                    <View key={cat.id} style={styles.catItem}>
+                      <View style={[styles.catIcon, { backgroundColor: iconData.bg }]}>
+                        <Text style={{ fontSize: 24 }}>{iconData.emoji}</Text>
+                      </View>
+                      <Text style={styles.catName} numberOfLines={1}>{cat.name}</Text>
+                    </View>
                   );
                 })}
-              </div>
-            </div>
+              </View>
+            </View>
 
-            {/* Supported Banks */}
-            <div style={{ ...styles.settingsSection, background: theme.card }}>
-              <div style={{ ...styles.settingsSectionTitle, color: theme.text }}>🏦 Supported Banks</div>
-              <p style={{ ...styles.supportedBanks, color: theme.textMuted }}>
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsSectionTitle}>🏦 Supported Banks</Text>
+              <Text style={styles.supportedBanks}>
                 HDFC • ICICI • SBI • Axis • Kotak • IDFC • Yes Bank • PNB • BOB • Google Pay • PhonePe • Paytm • Amazon Pay • CRED
-              </p>
-            </div>
+              </Text>
+            </View>
           </>
         )}
-      </main>
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
 
       {/* Add Button */}
-      <button style={styles.addBtn} onClick={() => setShowAddModal(true)}>
-        <Plus size={28} color="#fff" />
-      </button>
+      <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddModal(true)}>
+        <Feather name="plus" size={28} color="#fff" />
+      </TouchableOpacity>
 
       {/* Bottom Navigation */}
-      <nav style={styles.bottomNav}>
+      <View style={styles.bottomNav}>
         {[
-          { id: 'home', icon: '🏠', label: 'Home' },
-          { id: 'charts', icon: '📊', label: 'Charts' },
-          { id: 'settings', icon: '⚙️', label: 'Settings' },
+          { id: 'home', icon: 'home', label: 'Home' },
+          { id: 'charts', icon: 'pie-chart', label: 'Charts' },
+          { id: 'settings', icon: 'settings', label: 'Settings' },
         ].map(item => (
-          <button
+          <TouchableOpacity
             key={item.id}
             style={styles.navItem}
-            onClick={() => { setActiveTab(item.id); setDetailView(null); }}
+            onPress={() => { setActiveTab(item.id); setDetailView(null); }}
           >
-            <span style={{ fontSize: '22px' }}>{item.icon}</span>
-            <span style={{ ...styles.navLabel, color: activeTab === item.id ? '#FF9BB3' : '#B8B8D0' }}>{item.label}</span>
-            {activeTab === item.id && <div style={styles.navDot} />}
-          </button>
+            <Feather name={item.icon} size={22} color={activeTab === item.id ? '#FF9BB3' : '#B8B8D0'} />
+            <Text style={[styles.navLabel, { color: activeTab === item.id ? '#FF9BB3' : '#B8B8D0' }]}>{item.label}</Text>
+            {activeTab === item.id && <View style={styles.navDot} />}
+          </TouchableOpacity>
         ))}
-      </nav>
+      </View>
 
       {/* Add Transaction Modal */}
-      {showAddModal && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modal}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Add Transaction</h2>
-              <button style={styles.closeBtn} onClick={() => setShowAddModal(false)}>
-                <X size={24} color="#B8B8D0" />
-              </button>
-            </div>
+      <Modal visible={showAddModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add Transaction</Text>
+              <TouchableOpacity onPress={() => setShowAddModal(false)}>
+                <Feather name="x" size={24} color="#B8B8D0" />
+              </TouchableOpacity>
+            </View>
 
-            <div style={styles.typeToggle}>
-              <button
-                style={{ ...styles.typeBtn, background: transactionType === 'expense' ? '#FFE5E5' : '#f5f5f5', color: transactionType === 'expense' ? '#FF6B8A' : '#999' }}
-                onClick={() => { setTransactionType('expense'); setNewTransaction(p => ({ ...p, category: 'food' })); }}
-              >
-                💸 Expense
-              </button>
-              <button
-                style={{ ...styles.typeBtn, background: transactionType === 'income' ? '#E8F5E9' : '#f5f5f5', color: transactionType === 'income' ? '#4CAF50' : '#999' }}
-                onClick={() => { setTransactionType('income'); setNewTransaction(p => ({ ...p, category: 'salary' })); }}
-              >
-                💰 Income
-              </button>
-            </div>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.typeToggle}>
+                <TouchableOpacity
+                  style={[styles.typeBtn, { backgroundColor: transactionType === 'expense' ? '#FFE5E5' : '#f5f5f5' }]}
+                  onPress={() => { setTransactionType('expense'); setNewTransaction(p => ({ ...p, category: 'food' })); }}
+                >
+                  <Text style={{ color: transactionType === 'expense' ? '#FF6B8A' : '#999', fontWeight: '700' }}>💸 Expense</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.typeBtn, { backgroundColor: transactionType === 'income' ? '#E8F5E9' : '#f5f5f5' }]}
+                  onPress={() => { setTransactionType('income'); setNewTransaction(p => ({ ...p, category: 'salary' })); }}
+                >
+                  <Text style={{ color: transactionType === 'income' ? '#4CAF50' : '#999', fontWeight: '700' }}>💰 Income</Text>
+                </TouchableOpacity>
+              </View>
 
-            <div style={styles.amountSection}>
-              <span style={styles.currencySign}>₹</span>
-              <input
-                type="number"
-                placeholder="0"
-                style={styles.amountInput}
-                value={newTransaction.amount}
-                onChange={(e) => setNewTransaction(p => ({ ...p, amount: e.target.value }))}
+              <View style={styles.amountSection}>
+                <Text style={styles.currencySign}>₹</Text>
+                <TextInput
+                  placeholder="0"
+                  placeholderTextColor="#B8B8D0"
+                  style={styles.amountInput}
+                  keyboardType="numeric"
+                  value={newTransaction.amount}
+                  onChangeText={(text) => setNewTransaction(p => ({ ...p, amount: text }))}
+                />
+              </View>
+
+              <TextInput
+                placeholder="Add note..."
+                placeholderTextColor="#B8B8D0"
+                style={styles.noteInput}
+                value={newTransaction.note}
+                onChangeText={(text) => setNewTransaction(p => ({ ...p, note: text }))}
               />
-            </div>
 
-            <input
-              type="text"
-              placeholder="Add note..."
-              style={styles.noteInput}
-              value={newTransaction.note}
-              onChange={(e) => setNewTransaction(p => ({ ...p, note: e.target.value }))}
-            />
+              {transactionType === 'expense' && (
+                <>
+                  <Text style={styles.sectionLabel}>💳 Payment Mode</Text>
+                  <View style={styles.paymentGrid}>
+                    {paymentModes.map(mode => (
+                      <TouchableOpacity
+                        key={mode.id}
+                        style={[styles.paymentOption, {
+                          backgroundColor: newTransaction.paymentMode === mode.id ? mode.bg : '#f9f9f9',
+                          borderColor: newTransaction.paymentMode === mode.id ? mode.color : 'transparent',
+                          borderWidth: 2
+                        }]}
+                        onPress={() => setNewTransaction(p => ({ ...p, paymentMode: mode.id }))}
+                      >
+                        <Text style={{ fontSize: 20 }}>{mode.emoji}</Text>
+                        <Text style={[styles.paymentOptLabel, { color: newTransaction.paymentMode === mode.id ? mode.color : '#888' }]}>{mode.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
 
-            <p style={styles.sectionLabel}>📅 Date</p>
-            <input
-              type="date"
-              style={{ ...styles.noteInput, marginBottom: '16px' }}
-              value={newTransaction.date}
-              onChange={(e) => setNewTransaction(p => ({ ...p, date: e.target.value }))}
-            />
-
-            {transactionType === 'expense' && (
-              <>
-                <p style={styles.sectionLabel}>💳 Payment Mode</p>
-                <div style={styles.paymentGrid}>
-                  {paymentModes.map(mode => (
-                    <button
-                      key={mode.id}
-                      style={{
-                        ...styles.paymentOption,
-                        background: newTransaction.paymentMode === mode.id ? mode.bg : '#f9f9f9',
-                        border: newTransaction.paymentMode === mode.id ? `2px solid ${mode.color}` : '2px solid transparent'
-                      }}
-                      onClick={() => setNewTransaction(p => ({ ...p, paymentMode: mode.id }))}
+              <Text style={styles.sectionLabel}>📁 Category</Text>
+              <View style={styles.categoryGrid}>
+                {categories.filter(c => c.type === transactionType).map(cat => {
+                  const iconData = iconLibrary[cat.icon] || iconLibrary.other;
+                  const isSelected = newTransaction.category === cat.id;
+                  return (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={[styles.categoryOption, {
+                        backgroundColor: isSelected ? iconData.bg : '#f9f9f9',
+                        borderColor: isSelected ? '#FF9BB3' : 'transparent',
+                        borderWidth: 2
+                      }]}
+                      onPress={() => setNewTransaction(p => ({ ...p, category: cat.id }))}
                     >
-                      <span style={{ fontSize: '20px' }}>{mode.emoji}</span>
-                      <span style={{ ...styles.paymentOptLabel, color: newTransaction.paymentMode === mode.id ? mode.color : '#888' }}>{mode.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+                      <Text style={{ fontSize: 22 }}>{iconData.emoji}</Text>
+                      <Text style={[styles.categoryOptLabel, { color: isSelected ? '#5A5A7A' : '#B8B8D0' }]} numberOfLines={1}>{cat.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
-            <p style={styles.sectionLabel}>📁 Category</p>
-            <div style={styles.categoryGrid}>
-              {categories.filter(c => c.type === transactionType).map(cat => {
-                const iconData = iconLibrary[cat.icon] || iconLibrary.other;
-                const isSelected = newTransaction.category === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    style={{
-                      ...styles.categoryOption,
-                      background: isSelected ? iconData.bg : '#f9f9f9',
-                      border: isSelected ? '2px solid #FF9BB3' : '2px solid transparent'
-                    }}
-                    onClick={() => setNewTransaction(p => ({ ...p, category: cat.id }))}
-                  >
-                    <span style={{ fontSize: '22px' }}>{iconData.emoji}</span>
-                    <span style={{ ...styles.categoryOptLabel, color: isSelected ? '#5A5A7A' : '#B8B8D0' }}>{cat.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <button style={styles.saveBtn} onClick={addTransaction}>
-              <Check size={22} color="#fff" />
-              <span>Save Transaction</span>
-            </button>
-          </div>
-        </div>
-      )}
+              <TouchableOpacity style={styles.saveBtn} onPress={addTransaction}>
+                <Feather name="check" size={22} color="#fff" />
+                <Text style={styles.saveBtnText}>Save Transaction</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Edit Transaction Modal */}
-      {showEditModal && editTransaction && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modal}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>✏️ Edit Transaction</h2>
-              <button style={styles.closeBtn} onClick={() => { setShowEditModal(false); setEditTransaction(null); }}>
-                <X size={24} color="#B8B8D0" />
-              </button>
-            </div>
+      <Modal visible={showEditModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>✏️ Edit Transaction</Text>
+              <TouchableOpacity onPress={() => { setShowEditModal(false); setEditTransaction(null); }}>
+                <Feather name="x" size={24} color="#B8B8D0" />
+              </TouchableOpacity>
+            </View>
 
-            <div style={styles.amountSection}>
-              <span style={styles.currencySign}>₹</span>
-              <input
-                type="number"
-                placeholder="0"
-                style={styles.amountInput}
-                value={editTransaction.amount}
-                onChange={(e) => setEditTransaction(p => ({ ...p, amount: e.target.value }))}
-              />
-            </div>
+            {editTransaction && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.amountSection}>
+                  <Text style={styles.currencySign}>₹</Text>
+                  <TextInput
+                    placeholder="0"
+                    placeholderTextColor="#B8B8D0"
+                    style={styles.amountInput}
+                    keyboardType="numeric"
+                    value={editTransaction.amount}
+                    onChangeText={(text) => setEditTransaction(p => ({ ...p, amount: text }))}
+                  />
+                </View>
 
-            <input
-              type="text"
-              placeholder="Add note..."
-              style={styles.noteInput}
-              value={editTransaction.note}
-              onChange={(e) => setEditTransaction(p => ({ ...p, note: e.target.value }))}
-            />
+                <TextInput
+                  placeholder="Add note..."
+                  placeholderTextColor="#B8B8D0"
+                  style={styles.noteInput}
+                  value={editTransaction.note}
+                  onChangeText={(text) => setEditTransaction(p => ({ ...p, note: text }))}
+                />
 
-            {editTransaction.type === 'expense' && (
-              <>
-                <p style={styles.sectionLabel}>💳 Payment Mode</p>
-                <div style={styles.paymentGrid}>
-                  {paymentModes.map(mode => (
-                    <button
-                      key={mode.id}
-                      style={{
-                        ...styles.paymentOption,
-                        background: editTransaction.paymentMode === mode.id ? mode.bg : '#f9f9f9',
-                        border: editTransaction.paymentMode === mode.id ? `2px solid ${mode.color}` : '2px solid transparent'
-                      }}
-                      onClick={() => setEditTransaction(p => ({ ...p, paymentMode: mode.id }))}
-                    >
-                      <span style={{ fontSize: '20px' }}>{mode.emoji}</span>
-                      <span style={{ ...styles.paymentOptLabel, color: editTransaction.paymentMode === mode.id ? mode.color : '#888' }}>{mode.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
+                {editTransaction.type === 'expense' && (
+                  <>
+                    <Text style={styles.sectionLabel}>💳 Payment Mode</Text>
+                    <View style={styles.paymentGrid}>
+                      {paymentModes.map(mode => (
+                        <TouchableOpacity
+                          key={mode.id}
+                          style={[styles.paymentOption, {
+                            backgroundColor: editTransaction.paymentMode === mode.id ? mode.bg : '#f9f9f9',
+                            borderColor: editTransaction.paymentMode === mode.id ? mode.color : 'transparent',
+                            borderWidth: 2
+                          }]}
+                          onPress={() => setEditTransaction(p => ({ ...p, paymentMode: mode.id }))}
+                        >
+                          <Text style={{ fontSize: 20 }}>{mode.emoji}</Text>
+                          <Text style={[styles.paymentOptLabel, { color: editTransaction.paymentMode === mode.id ? mode.color : '#888' }]}>{mode.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                <Text style={styles.sectionLabel}>📁 Category</Text>
+                <View style={styles.categoryGrid}>
+                  {categories.filter(c => c.type === editTransaction.type).map(cat => {
+                    const iconData = iconLibrary[cat.icon] || iconLibrary.other;
+                    const isSelected = editTransaction.category === cat.id;
+                    return (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[styles.categoryOption, {
+                          backgroundColor: isSelected ? iconData.bg : '#f9f9f9',
+                          borderColor: isSelected ? '#FF9BB3' : 'transparent',
+                          borderWidth: 2
+                        }]}
+                        onPress={() => setEditTransaction(p => ({ ...p, category: cat.id }))}
+                      >
+                        <Text style={{ fontSize: 22 }}>{iconData.emoji}</Text>
+                        <Text style={[styles.categoryOptLabel, { color: isSelected ? '#5A5A7A' : '#B8B8D0' }]} numberOfLines={1}>{cat.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.editBtnRow}>
+                  <TouchableOpacity style={[styles.saveBtn, styles.deleteEditBtn]} onPress={() => { deleteTransaction(editTransaction.id); setShowEditModal(false); setEditTransaction(null); }}>
+                    <Feather name="trash-2" size={20} color="#fff" />
+                    <Text style={styles.saveBtnText}>Delete</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.saveBtn, { flex: 2 }]} onPress={saveEditedTransaction}>
+                    <Feather name="check" size={22} color="#fff" />
+                    <Text style={styles.saveBtnText}>Save Changes</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             )}
-
-            <p style={styles.sectionLabel}>📁 Category</p>
-            <div style={styles.categoryGrid}>
-              {categories.filter(c => c.type === editTransaction.type).map(cat => {
-                const iconData = iconLibrary[cat.icon] || iconLibrary.other;
-                const isSelected = editTransaction.category === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    style={{
-                      ...styles.categoryOption,
-                      background: isSelected ? iconData.bg : '#f9f9f9',
-                      border: isSelected ? '2px solid #FF9BB3' : '2px solid transparent'
-                    }}
-                    onClick={() => setEditTransaction(p => ({ ...p, category: cat.id }))}
-                  >
-                    <span style={{ fontSize: '22px' }}>{iconData.emoji}</span>
-                    <span style={{ ...styles.categoryOptLabel, color: isSelected ? '#5A5A7A' : '#B8B8D0' }}>{cat.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px', padding: '0 20px 20px' }}>
-              <button style={{ ...styles.saveBtn, flex: 1, background: '#FF6B6B' }} onClick={() => { deleteTransaction(editTransaction.id); setShowEditModal(false); setEditTransaction(null); }}>
-                <Trash2 size={20} color="#fff" />
-                <span>Delete</span>
-              </button>
-              <button style={{ ...styles.saveBtn, flex: 2 }} onClick={saveEditedTransaction}>
-                <Check size={22} color="#fff" />
-                <span>Save Changes</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </View>
+        </View>
+      </Modal>
 
       {/* SMS Import Modal */}
-      {showSMSModal && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modal}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>📱 Import Transactions</h2>
-              <button style={styles.closeBtn} onClick={() => { setShowSMSModal(false); setSelectedSMS({}); }}>
-                <X size={24} color="#B8B8D0" />
-              </button>
-            </div>
+      <Modal visible={showSMSModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>📱 Import Transactions</Text>
+              <TouchableOpacity onPress={() => { setShowSMSModal(false); setSelectedSMS({}); }}>
+                <Feather name="x" size={24} color="#B8B8D0" />
+              </TouchableOpacity>
+            </View>
 
-            <div style={styles.selectAllRow} onClick={selectAllSMS}>
-              <input type="checkbox" checked={sampleSMSToImport.every(sms => selectedSMS[sms.id])} readOnly style={{ width: 20, height: 20, accentColor: '#FF9BB3' }} />
-              <span style={styles.selectAllText}>
+            <TouchableOpacity style={styles.selectAllRow} onPress={selectAllSMS}>
+              <View style={[styles.checkbox, sampleSMSToImport.every(sms => selectedSMS[sms.id]) && styles.checkboxChecked]}>
+                {sampleSMSToImport.every(sms => selectedSMS[sms.id]) && <Feather name="check" size={14} color="#fff" />}
+              </View>
+              <Text style={styles.selectAllText}>
                 Select All ({Object.keys(selectedSMS).filter(k => selectedSMS[k]).length}/{sampleSMSToImport.length})
-              </span>
-            </div>
+              </Text>
+            </TouchableOpacity>
 
-            <div style={styles.smsListContainer}>
+            <ScrollView style={styles.smsListContainer}>
               {sampleSMSToImport.map(sms => {
                 const cat = categories.find(c => c.id === sms.category) || categories[0];
                 const iconData = iconLibrary[cat.icon] || iconLibrary.other;
                 const payMode = paymentModes.find(p => p.id === sms.paymentMode) || paymentModes[0];
                 const isSelected = selectedSMS[sms.id];
                 return (
-                  <div
+                  <TouchableOpacity
                     key={sms.id}
-                    style={{ ...styles.smsItem, background: isSelected ? '#FFF5F8' : '#fff' }}
-                    onClick={() => toggleSMSSelection(sms.id)}
+                    style={[styles.smsItem, { backgroundColor: isSelected ? '#FFF5F8' : '#fff' }]}
+                    onPress={() => toggleSMSSelection(sms.id)}
                   >
-                    <input type="checkbox" checked={isSelected || false} readOnly style={{ width: 20, height: 20, accentColor: '#FF9BB3' }} />
-                    <div style={{ ...styles.smsIcon, background: iconData.bg }}>
-                      <span style={{ fontSize: '18px' }}>{iconData.emoji}</span>
-                    </div>
-                    <div style={styles.smsInfo}>
-                      <div style={styles.smsMerchant}>{sms.merchant}</div>
-                      <div style={styles.smsMetaRow}>
-                        <span style={{ ...styles.smsType, color: sms.type === 'income' ? '#4CAF50' : '#FF6B8A' }}>
+                    <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
+                      {isSelected && <Feather name="check" size={14} color="#fff" />}
+                    </View>
+                    <View style={[styles.smsIcon, { backgroundColor: iconData.bg }]}>
+                      <Text style={{ fontSize: 18 }}>{iconData.emoji}</Text>
+                    </View>
+                    <View style={styles.smsInfo}>
+                      <Text style={styles.smsMerchant}>{sms.merchant}</Text>
+                      <View style={styles.smsMetaRow}>
+                        <Text style={[styles.smsType, { color: sms.type === 'income' ? '#4CAF50' : '#FF6B8A' }]}>
                           {sms.type === 'income' ? '↓ Income' : '↑ Expense'}
-                        </span>
-                        <span style={styles.smsDateText}>{sms.date}</span>
-                      </div>
-                      <span style={{ ...styles.paymentBadge, background: payMode.bg, color: payMode.color, marginTop: '4px', display: 'inline-block' }}>
-                        {payMode.emoji} {payMode.name}
-                      </span>
-                    </div>
-                    <span style={{ ...styles.smsAmount, color: sms.type === 'income' ? '#4CAF50' : '#FF6B8A' }}>
+                        </Text>
+                        <Text style={styles.smsDateText}>{sms.date}</Text>
+                      </View>
+                      <View style={[styles.paymentBadge, { backgroundColor: payMode.bg, marginTop: 4 }]}>
+                        <Text style={[styles.paymentBadgeText, { color: payMode.color }]}>{payMode.emoji} {payMode.name}</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.smsAmount, { color: sms.type === 'income' ? '#4CAF50' : '#FF6B8A' }]}>
                       {sms.type === 'income' ? '+' : '-'}{formatCurrency(sms.amount)}
-                    </span>
-                  </div>
+                    </Text>
+                  </TouchableOpacity>
                 );
               })}
-            </div>
+            </ScrollView>
 
-            <button style={{ ...styles.saveBtn, margin: '16px 20px 20px' }} onClick={importSelectedSMS}>
-              <span>Import {Object.keys(selectedSMS).filter(k => selectedSMS[k]).length} Transactions</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Budget Edit Modal */}
-      {showBudgetModal && (
-        <div style={styles.modalOverlay}>
-          <div style={{ ...styles.modal, maxHeight: '50vh' }}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>🎯 Set Monthly Budget</h2>
-              <button style={styles.closeBtn} onClick={() => setShowBudgetModal(false)}>
-                <X size={24} color="#B8B8D0" />
-              </button>
-            </div>
-            <div style={{ padding: '20px' }}>
-              <div style={styles.amountSection}>
-                <span style={styles.currencySign}>₹</span>
-                <input
-                  type="number"
-                  placeholder="50000"
-                  style={styles.amountInput}
-                  value={budget}
-                  onChange={(e) => setBudget(parseInt(e.target.value) || 0)}
-                />
-              </div>
-              <p style={{ fontSize: '12px', color: '#888', textAlign: 'center', marginBottom: '20px' }}>
-                Set your monthly spending limit to track your budget
-              </p>
-              <button style={styles.saveBtn} onClick={() => setShowBudgetModal(false)}>
-                <Check size={22} color="#fff" />
-                <span>Save Budget</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Card Mapping Modal */}
-      {showCardMappingModal && (
-        <div style={styles.modalOverlay}>
-          <div style={{ ...styles.modal, maxHeight: '80vh' }}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>💳 Card Mapping</h2>
-              <button style={styles.closeBtn} onClick={() => setShowCardMappingModal(false)}>
-                <X size={24} color="#B8B8D0" />
-              </button>
-            </div>
-            <div style={{ padding: '20px' }}>
-              <p style={{ fontSize: '13px', color: '#666', marginBottom: '16px' }}>
-                Map your card last 4 digits to automatically detect payment mode from SMS
-              </p>
-
-              {/* Add new card mapping */}
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-                <input
-                  type="text"
-                  placeholder="Last 4 digits"
-                  maxLength={4}
-                  style={{ ...styles.noteInput, flex: 1, marginBottom: 0 }}
-                  value={newCardMapping.last4}
-                  onChange={(e) => setNewCardMapping(p => ({ ...p, last4: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
-                />
-                <select
-                  style={{ ...styles.noteInput, flex: 1, marginBottom: 0 }}
-                  value={newCardMapping.type}
-                  onChange={(e) => setNewCardMapping(p => ({ ...p, type: e.target.value }))}
-                >
-                  <option value="debit">Debit Card</option>
-                  <option value="credit">Credit Card</option>
-                  <option value="upi">UPI</option>
-                </select>
-                <button
-                  style={{ ...styles.saveBtn, width: 'auto', margin: 0, padding: '12px 16px' }}
-                  onClick={addCardMapping}
-                >
-                  <Plus size={20} color="#fff" />
-                </button>
-              </div>
-
-              {/* Existing mappings */}
-              <div style={{ maxHeight: '300px', overflow: 'auto' }}>
-                {cardMappings.length === 0 ? (
-                  <p style={{ textAlign: 'center', color: '#888', padding: '20px' }}>
-                    No cards mapped yet. Add your first card above.
-                  </p>
-                ) : (
-                  cardMappings.map(card => (
-                    <div key={card.id} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '12px', background: '#f9f9f9', borderRadius: '12px', marginBottom: '8px'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '24px' }}>
-                          {card.type === 'credit' ? '💳' : card.type === 'upi' ? '📱' : '🏧'}
-                        </span>
-                        <div>
-                          <div style={{ fontWeight: '600', color: '#5A5A7A' }}>••••{card.last4}</div>
-                          <div style={{ fontSize: '12px', color: '#888', textTransform: 'capitalize' }}>{card.type} Card</div>
-                        </div>
-                      </div>
-                      <button
-                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                        onClick={() => deleteCardMapping(card.id)}
-                      >
-                        <Trash2 size={18} color="#FF6B8A" />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Insights Modal */}
-      {showInsightsModal && (
-        <div style={styles.modalOverlay}>
-          <div style={{ ...styles.modal, maxHeight: '85vh' }}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>📊 Monthly Insights</h2>
-              <button style={styles.closeBtn} onClick={() => setShowInsightsModal(false)}>
-                <X size={24} color="#B8B8D0" />
-              </button>
-            </div>
-            <div style={{ padding: '20px' }}>
-              {(() => {
-                const insights = getInsights();
-                const topCat = insights.topCategory ? categories.find(c => c.id === insights.topCategory.id) : null;
-                return (
-                  <>
-                    <div style={{
-                      background: 'linear-gradient(135deg, #FFB6C1 0%, #FF9BB3 100%)',
-                      borderRadius: '20px', padding: '24px', marginBottom: '16px', color: '#fff'
-                    }}>
-                      <div style={{ fontSize: '13px', opacity: 0.9 }}>Total Spent This Month</div>
-                      <div style={{ fontSize: '36px', fontWeight: '800' }}>{formatCurrency(insights.thisMonthTotal)}</div>
-                      <div style={{ fontSize: '12px', marginTop: '8px', opacity: 0.9 }}>
-                        {insights.budgetUsed}% of budget used
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-                      <div style={{ background: '#E8F5E9', borderRadius: '16px', padding: '16px' }}>
-                        <div style={{ fontSize: '11px', color: '#4CAF50' }}>Daily Average</div>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#2E7D32' }}>
-                          {formatCurrency(insights.dailyAverage)}
-                        </div>
-                      </div>
-                      <div style={{ background: '#E3F2FD', borderRadius: '16px', padding: '16px' }}>
-                        <div style={{ fontSize: '11px', color: '#2196F3' }}>Transactions</div>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: '#1565C0' }}>
-                          {insights.transactionCount}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#FFF3E0', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-                      <div style={{ fontSize: '11px', color: '#FF9800' }}>vs Last Month</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: insights.trend >= 0 ? '#FF6B6B' : '#4CAF50' }}>
-                          {insights.trend >= 0 ? '↑' : '↓'} {Math.abs(insights.trend)}%
-                        </div>
-                        <span style={{ fontSize: '12px', color: '#888' }}>
-                          ({formatCurrency(insights.lastMonthTotal)} last month)
-                        </span>
-                      </div>
-                    </div>
-
-                    {topCat && (
-                      <div style={{ background: '#F3E5F5', borderRadius: '16px', padding: '16px' }}>
-                        <div style={{ fontSize: '11px', color: '#9C27B0' }}>Top Spending Category</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
-                          <span style={{ fontSize: '28px' }}>{iconLibrary[topCat.icon]?.emoji || '📦'}</span>
-                          <div>
-                            <div style={{ fontSize: '16px', fontWeight: '700', color: '#7B1FA2' }}>{topCat.name}</div>
-                            <div style={{ fontSize: '14px', color: '#9C27B0' }}>{formatCurrency(insights.topCategory.amount)}</div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        input::placeholder { color: #B8B8D0; }
-      `}</style>
-    </div>
+            <TouchableOpacity style={[styles.saveBtn, { margin: 16 }]} onPress={importSelectedSMS}>
+              <Text style={styles.saveBtnText}>Import {Object.keys(selectedSMS).filter(k => selectedSMS[k]).length} Transactions</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
-const styles = {
-  container: { fontFamily: "'Nunito', -apple-system, BlinkMacSystemFont, sans-serif", background: 'linear-gradient(180deg, #FFF9FC 0%, #FFF5F8 50%, #FFEEF4 100%)', minHeight: '100vh', maxWidth: '430px', margin: '0 auto', position: 'relative', paddingBottom: '90px', overflow: 'hidden' },
-  bgDecor1: { position: 'absolute', top: '-100px', right: '-100px', width: '250px', height: '250px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,155,179,0.15) 0%, rgba(255,155,179,0) 70%)', pointerEvents: 'none' },
-  bgDecor2: { position: 'absolute', bottom: '100px', left: '-80px', width: '200px', height: '200px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(155,107,255,0.1) 0%, rgba(155,107,255,0) 70%)', pointerEvents: 'none' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '50px 20px 16px' },
-  appTitle: { fontSize: '22px', fontWeight: '800', color: '#FF9BB3', margin: 0 },
-  monthSelector: { display: 'flex', alignItems: 'center', gap: '6px', background: '#fff', padding: '8px 12px', borderRadius: '20px', boxShadow: '0 2px 12px rgba(255,155,179,0.15)' },
-  monthBtn: { background: 'none', border: 'none', color: '#FF9BB3', cursor: 'pointer', padding: '2px 4px', display: 'flex', alignItems: 'center' },
-  monthText: { fontSize: '13px', fontWeight: '600', color: '#5A5A7A', minWidth: '75px', textAlign: 'center' },
-  main: { padding: '0 16px' },
-  balanceCard: { background: '#fff', borderRadius: '20px', padding: '20px', marginBottom: '12px', boxShadow: '0 4px 20px rgba(255,155,179,0.12)' },
-  balanceLabel: { fontSize: '12px', color: '#B8B8D0', marginBottom: '4px' },
-  balanceAmount: { fontSize: '32px', fontWeight: '800', color: '#5A5A7A', marginBottom: '16px' },
-  balanceRow: { display: 'flex', gap: '12px' },
-  incomeBox: { flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#E8F5E9', padding: '12px', borderRadius: '14px' },
-  expenseBox: { flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#FFE5E5', padding: '12px', borderRadius: '14px' },
-  miniLabel: { fontSize: '10px', color: '#888' },
-  incomeAmount: { fontSize: '14px', fontWeight: '700', color: '#4CAF50' },
-  expenseAmount: { fontSize: '14px', fontWeight: '700', color: '#FF6B8A' },
-  syncButton: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#fff', padding: '14px', borderRadius: '14px', border: '1px solid #FFE5E5', marginBottom: '12px', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
-  syncButtonText: { fontSize: '14px', fontWeight: '600', color: '#FF9BB3' },
-  syncDate: { fontSize: '11px', color: '#B8B8D0', marginLeft: '8px' },
-  budgetSection: { background: '#fff', borderRadius: '16px', padding: '14px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
-  budgetHeader: { display: 'flex', justifyContent: 'space-between', marginBottom: '8px' },
-  budgetTitle: { fontSize: '12px', fontWeight: '600', color: '#5A5A7A' },
-  budgetValue: { fontSize: '11px', color: '#B8B8D0' },
-  budgetTrack: { height: '8px', background: '#F5F5F5', borderRadius: '8px', overflow: 'hidden' },
-  budgetFill: { height: '100%', borderRadius: '8px', transition: 'width 0.4s ease' },
-  budgetRemaining: { fontSize: '11px', textAlign: 'center', marginTop: '8px' },
-  paymentSummary: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' },
-  paymentModeCard: { background: '#fff', borderRadius: '12px', padding: '10px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
-  paymentModeName: { fontSize: '9px', color: '#888' },
-  paymentModeAmount: { fontSize: '11px', fontWeight: '700', color: '#5A5A7A' },
-  searchBox: { display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', padding: '12px 16px', borderRadius: '14px', marginBottom: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' },
-  searchInput: { flex: 1, border: 'none', outline: 'none', fontSize: '14px', color: '#5A5A7A', background: 'transparent' },
-  sectionTitle: { fontSize: '15px', fontWeight: '700', color: '#5A5A7A', marginBottom: '12px' },
-  dateGroup: { marginBottom: '16px' },
-  dateHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 4px', marginBottom: '8px', borderBottom: '1px solid #f0f0f0' },
-  dateHeaderText: { fontSize: '13px', fontWeight: '700', color: '#FF9BB3' },
-  dateHeaderAmount: { fontSize: '12px', fontWeight: '600' },
-  transactionItem: { display: 'flex', alignItems: 'center', gap: '12px', background: '#fff', padding: '12px', borderRadius: '14px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', marginBottom: '8px', transition: 'all 0.2s ease', cursor: 'pointer' },
-  transactionIcon: { width: '46px', height: '46px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  transactionInfo: { flex: 1, minWidth: 0 },
-  transactionNote: { display: 'block', fontSize: '13px', fontWeight: '600', color: '#5A5A7A', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  transactionMeta: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' },
-  paymentBadge: { fontSize: '9px', fontWeight: '600', padding: '3px 8px', borderRadius: '10px' },
-  smsBadge: { fontSize: '8px', fontWeight: '600', padding: '2px 6px', borderRadius: '8px', background: '#E3F2FD', color: '#2196F3' },
-  categoryLabel: { fontSize: '10px', color: '#B8B8D0' },
-  transactionRight: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' },
-  transactionAmount: { fontSize: '14px', fontWeight: '700' },
-  deleteBtn: { background: 'none', border: 'none', padding: '2px', cursor: 'pointer' },
-  emptyState: { textAlign: 'center', padding: '40px 20px' },
-  emptyEmoji: { fontSize: '48px', marginBottom: '12px' },
-  emptyText: { fontSize: '16px', fontWeight: '600', color: '#5A5A7A', margin: '0 0 4px' },
-  emptySubtext: { fontSize: '13px', color: '#B8B8D0', margin: 0 },
-  chartToggle: { display: 'flex', gap: '10px', marginBottom: '16px' },
-  chartToggleBtn: { flex: 1, padding: '12px', borderRadius: '12px', border: 'none', fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
-  paymentChartHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', padding: '12px', background: '#fff', borderRadius: '12px', fontSize: '14px', fontWeight: '600' },
-  statsItem: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#fff', borderRadius: '14px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', cursor: 'pointer' },
-  statsIcon: { width: '44px', height: '44px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  statsInfo: { flex: 1, minWidth: 0 },
-  statsName: { display: 'block', fontSize: '13px', fontWeight: '600', color: '#5A5A7A', marginBottom: '6px' },
-  statsBar: { height: '6px', background: '#F5F5F5', borderRadius: '6px', overflow: 'hidden' },
-  statsBarFill: { height: '100%', borderRadius: '6px', transition: 'width 0.3s' },
-  statsRight: { textAlign: 'right', minWidth: '70px' },
-  statsPercent: { display: 'block', fontSize: '13px', fontWeight: '700' },
-  statsAmount: { fontSize: '12px', color: '#888' },
-  detailHeader: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', padding: '4px 0' },
-  backBtn: { background: '#fff', border: 'none', width: '40px', height: '40px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' },
-  settingsSection: { background: '#fff', borderRadius: '16px', padding: '16px', marginBottom: '16px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' },
-  settingsSectionTitle: { fontSize: '15px', fontWeight: '700', color: '#5A5A7A', marginBottom: '12px' },
-  settingsItem: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderBottom: '1px solid #f5f5f5', cursor: 'pointer' },
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#FFF9FC' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: Platform.OS === 'ios' ? 50 : 40, paddingHorizontal: 20, paddingBottom: 16 },
+  appTitle: { fontSize: 22, fontWeight: '800', color: '#FF9BB3' },
+  monthSelector: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, elevation: 3 },
+  monthBtn: { padding: 2 },
+  monthText: { fontSize: 13, fontWeight: '600', color: '#5A5A7A', minWidth: 75, textAlign: 'center' },
+  main: { flex: 1, paddingHorizontal: 16 },
+  balanceCard: { backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 12, elevation: 4 },
+  balanceLabel: { fontSize: 12, color: '#B8B8D0', marginBottom: 4 },
+  balanceAmount: { fontSize: 32, fontWeight: '800', color: '#5A5A7A', marginBottom: 16 },
+  balanceRow: { flexDirection: 'row', gap: 12 },
+  incomeBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#E8F5E9', padding: 12, borderRadius: 14 },
+  expenseBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFE5E5', padding: 12, borderRadius: 14 },
+  miniLabel: { fontSize: 10, color: '#888' },
+  incomeAmount: { fontSize: 14, fontWeight: '700', color: '#4CAF50' },
+  expenseAmount: { fontSize: 14, fontWeight: '700', color: '#FF6B8A' },
+  syncButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#fff', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#FFE5E5', marginBottom: 12 },
+  syncButtonText: { fontSize: 14, fontWeight: '600', color: '#FF9BB3' },
+  syncDate: { fontSize: 11, color: '#B8B8D0', marginLeft: 8 },
+  budgetSection: { backgroundColor: '#fff', borderRadius: 16, padding: 14, marginBottom: 12, elevation: 2 },
+  budgetHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  budgetTitle: { fontSize: 12, fontWeight: '600', color: '#5A5A7A' },
+  budgetValue: { fontSize: 11, color: '#B8B8D0' },
+  budgetTrack: { height: 8, backgroundColor: '#F5F5F5', borderRadius: 8, overflow: 'hidden' },
+  budgetFill: { height: '100%', borderRadius: 8 },
+  budgetRemaining: { fontSize: 11, textAlign: 'center', marginTop: 8 },
+  paymentSummary: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  paymentModeCard: { flex: 1, backgroundColor: '#fff', borderRadius: 12, padding: 10, alignItems: 'center', gap: 4, elevation: 2 },
+  paymentModeName: { fontSize: 9, color: '#888' },
+  paymentModeAmount: { fontSize: 11, fontWeight: '700', color: '#5A5A7A' },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fff', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 14, marginBottom: 16, elevation: 2 },
+  searchInput: { flex: 1, fontSize: 14, color: '#5A5A7A' },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#5A5A7A', marginBottom: 12 },
+  dateGroup: { marginBottom: 16 },
+  dateHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4, marginBottom: 8, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  dateHeaderText: { fontSize: 13, fontWeight: '700', color: '#FF9BB3' },
+  transactionItem: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', padding: 12, borderRadius: 14, elevation: 2, marginBottom: 8 },
+  transactionIcon: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  transactionInfo: { flex: 1 },
+  transactionNote: { fontSize: 13, fontWeight: '600', color: '#5A5A7A', marginBottom: 4 },
+  transactionMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  paymentBadge: { paddingVertical: 3, paddingHorizontal: 8, borderRadius: 10 },
+  paymentBadgeText: { fontSize: 9, fontWeight: '600' },
+  smsBadge: { backgroundColor: '#E3F2FD', paddingVertical: 2, paddingHorizontal: 6, borderRadius: 8 },
+  smsBadgeText: { fontSize: 8, fontWeight: '600', color: '#2196F3' },
+  transactionRight: { alignItems: 'flex-end', gap: 4 },
+  transactionAmount: { fontSize: 14, fontWeight: '700' },
+  deleteBtn: { padding: 2 },
+  emptyState: { alignItems: 'center', padding: 40 },
+  emptyEmoji: { fontSize: 48, marginBottom: 12 },
+  emptyText: { fontSize: 16, fontWeight: '600', color: '#5A5A7A', marginBottom: 4 },
+  emptySubtext: { fontSize: 13, color: '#B8B8D0' },
+  chartToggle: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  chartToggleBtn: { flex: 1, padding: 12, borderRadius: 12, alignItems: 'center' },
+  paymentChartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, padding: 12, backgroundColor: '#fff', borderRadius: 12 },
+  statsItem: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, backgroundColor: '#fff', borderRadius: 14, marginBottom: 10, elevation: 2 },
+  statsIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  statsInfo: { flex: 1 },
+  statsName: { fontSize: 13, fontWeight: '600', color: '#5A5A7A', marginBottom: 6 },
+  statsBar: { height: 6, backgroundColor: '#F5F5F5', borderRadius: 6, overflow: 'hidden' },
+  statsBarFill: { height: '100%', borderRadius: 6 },
+  statsRight: { alignItems: 'flex-end', minWidth: 70 },
+  statsPercent: { fontSize: 13, fontWeight: '700' },
+  statsAmount: { fontSize: 12, color: '#888' },
+  detailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20, paddingVertical: 4 },
+  backBtn: { backgroundColor: '#fff', width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', elevation: 2 },
+  detailIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  detailTitle: { fontSize: 18, fontWeight: '700', color: '#5A5A7A' },
+  detailSubtitle: { fontSize: 12, color: '#B8B8D0' },
+  detailSummary: { borderRadius: 20, padding: 24, marginBottom: 24, alignItems: 'center' },
+  detailSummaryLabel: { fontSize: 13, color: '#888', marginBottom: 6 },
+  detailSummaryAmount: { fontSize: 36, fontWeight: '800', color: '#5A5A7A' },
+  detailSummaryCount: { fontSize: 12, color: '#888', marginTop: 6 },
+  settingsSection: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, elevation: 2 },
+  settingsSectionTitle: { fontSize: 15, fontWeight: '700', color: '#5A5A7A', marginBottom: 12 },
+  settingsItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
   settingsItemInfo: { flex: 1 },
-  settingsItemTitle: { fontSize: '14px', fontWeight: '600', color: '#5A5A7A' },
-  settingsItemDesc: { fontSize: '12px', color: '#B8B8D0', marginTop: '2px' },
-  budgetSetting: { marginTop: '8px' },
-  settingLabel: { fontSize: '13px', fontWeight: '600', color: '#5A5A7A', marginBottom: '8px' },
-  budgetInputRow: { display: 'flex', alignItems: 'center' },
-  rupeeSign: { fontSize: '24px', color: '#B8B8D0' },
-  budgetInputField: { flex: 1, border: 'none', fontSize: '28px', fontWeight: '700', color: '#5A5A7A', marginLeft: '8px', background: 'transparent', outline: 'none' },
-  catHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' },
-  addCatBtn: { width: '32px', height: '32px', borderRadius: '50%', background: '#FFF0F5', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' },
-  catGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' },
-  catItem: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' },
-  catIcon: { width: '48px', height: '48px', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  catName: { fontSize: '10px', fontWeight: '600', color: '#5A5A7A', textAlign: 'center', maxWidth: '60px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  supportedBanks: { fontSize: '12px', color: '#888', lineHeight: '20px' },
-  addBtn: { position: 'fixed', bottom: '95px', left: '50%', transform: 'translateX(-50%)', width: '56px', height: '56px', borderRadius: '50%', background: 'linear-gradient(135deg, #FFB6C1 0%, #FF9BB3 100%)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 6px 20px rgba(255,155,179,0.4)', zIndex: 100 },
-  bottomNav: { position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '430px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(0,0,0,0.04)', display: 'flex', justifyContent: 'space-around', padding: '10px 0 26px', zIndex: 99 },
-  navItem: { background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', cursor: 'pointer', padding: '6px 20px', position: 'relative' },
-  navLabel: { fontSize: '10px', fontWeight: '600' },
-  navDot: { position: 'absolute', bottom: '0px', width: '4px', height: '4px', borderRadius: '50%', background: '#FF9BB3' },
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(90,90,122,0.4)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 200, backdropFilter: 'blur(4px)' },
-  modal: { background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: '430px', maxHeight: '92vh', overflow: 'auto' },
-  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px', borderBottom: '1px solid #f5f5f5' },
-  modalTitle: { fontSize: '18px', fontWeight: '700', color: '#5A5A7A', margin: 0 },
-  closeBtn: { background: 'none', border: 'none', cursor: 'pointer' },
-  typeToggle: { display: 'flex', gap: '10px', padding: '14px 20px' },
-  typeBtn: { flex: 1, padding: '12px', borderRadius: '12px', border: 'none', fontSize: '13px', fontWeight: '700', cursor: 'pointer' },
-  amountSection: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', marginBottom: '16px', padding: '16px', background: '#FAFAFA', borderRadius: '16px', margin: '0 20px 16px' },
-  currencySign: { fontSize: '28px', color: '#B8B8D0', fontWeight: '600' },
-  amountInput: { background: 'transparent', border: 'none', fontSize: '36px', fontWeight: '800', color: '#5A5A7A', width: '160px', textAlign: 'center', outline: 'none' },
-  noteInput: { width: 'calc(100% - 40px)', margin: '0 20px 16px', padding: '14px', background: '#FAFAFA', border: 'none', borderRadius: '12px', fontSize: '14px', color: '#5A5A7A', outline: 'none' },
-  sectionLabel: { fontSize: '13px', fontWeight: '600', color: '#888', margin: '0 20px 10px' },
-  paymentGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', padding: '0 20px', marginBottom: '16px' },
-  paymentOption: { padding: '12px 8px', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer', border: '2px solid transparent' },
-  paymentOptLabel: { fontSize: '10px', fontWeight: '600', textAlign: 'center' },
-  categoryGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', padding: '0 20px', maxHeight: '200px', overflow: 'auto', marginBottom: '20px' },
-  categoryOption: { padding: '10px 4px', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer', border: '2px solid transparent' },
-  categoryOptLabel: { fontSize: '9px', fontWeight: '600', textAlign: 'center', maxWidth: '55px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  saveBtn: { width: 'calc(100% - 40px)', margin: '0 20px 20px', padding: '16px', background: 'linear-gradient(135deg, #FFB6C1 0%, #FF9BB3 100%)', border: 'none', borderRadius: '14px', color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 6px 20px rgba(255,155,179,0.3)' },
-  selectAllRow: { display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', borderBottom: '1px solid #f5f5f5', cursor: 'pointer' },
-  selectAllText: { fontSize: '14px', fontWeight: '600', color: '#5A5A7A' },
-  smsListContainer: { maxHeight: '350px', overflow: 'auto' },
-  smsItem: { display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', borderBottom: '1px solid #f5f5f5', cursor: 'pointer' },
-  smsIcon: { width: '40px', height: '40px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  settingsItemTitle: { fontSize: 14, fontWeight: '600', color: '#5A5A7A' },
+  settingsItemDesc: { fontSize: 12, color: '#B8B8D0', marginTop: 2 },
+  budgetSetting: { marginTop: 8 },
+  settingLabel: { fontSize: 13, fontWeight: '600', color: '#5A5A7A', marginBottom: 8 },
+  budgetInputRow: { flexDirection: 'row', alignItems: 'center' },
+  rupeeSign: { fontSize: 24, color: '#B8B8D0' },
+  budgetInputField: { flex: 1, fontSize: 28, fontWeight: '700', color: '#5A5A7A', marginLeft: 8 },
+  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  catItem: { width: '22%', alignItems: 'center', gap: 6 },
+  catIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  catName: { fontSize: 10, fontWeight: '600', color: '#5A5A7A', textAlign: 'center' },
+  supportedBanks: { fontSize: 12, color: '#888', lineHeight: 20 },
+  addBtn: { position: 'absolute', bottom: 95, alignSelf: 'center', width: 56, height: 56, borderRadius: 28, backgroundColor: '#FF9BB3', alignItems: 'center', justifyContent: 'center', elevation: 8 },
+  bottomNav: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(255,255,255,0.95)', borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.04)', flexDirection: 'row', justifyContent: 'space-around', paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 26 : 16 },
+  navItem: { alignItems: 'center', gap: 3, paddingHorizontal: 20, paddingVertical: 6 },
+  navLabel: { fontSize: 10, fontWeight: '600' },
+  navDot: { position: 'absolute', bottom: 0, width: 4, height: 4, borderRadius: 2, backgroundColor: '#FF9BB3' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(90,90,122,0.4)', justifyContent: 'flex-end' },
+  modal: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 18, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#5A5A7A' },
+  typeToggle: { flexDirection: 'row', gap: 10, padding: 14, paddingHorizontal: 20 },
+  typeBtn: { flex: 1, padding: 12, borderRadius: 12, alignItems: 'center' },
+  amountSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 16, padding: 16, backgroundColor: '#FAFAFA', borderRadius: 16, marginHorizontal: 20 },
+  currencySign: { fontSize: 28, color: '#B8B8D0', fontWeight: '600' },
+  amountInput: { fontSize: 36, fontWeight: '800', color: '#5A5A7A', minWidth: 100, textAlign: 'center' },
+  noteInput: { marginHorizontal: 20, marginBottom: 16, padding: 14, backgroundColor: '#FAFAFA', borderRadius: 12, fontSize: 14, color: '#5A5A7A' },
+  sectionLabel: { fontSize: 13, fontWeight: '600', color: '#888', marginHorizontal: 20, marginBottom: 10 },
+  paymentGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, marginBottom: 16 },
+  paymentOption: { width: '31%', padding: 12, borderRadius: 12, alignItems: 'center', gap: 4 },
+  paymentOptLabel: { fontSize: 10, fontWeight: '600', textAlign: 'center' },
+  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20, marginBottom: 20 },
+  categoryOption: { width: '23%', padding: 10, borderRadius: 12, alignItems: 'center', gap: 4 },
+  categoryOptLabel: { fontSize: 9, fontWeight: '600', textAlign: 'center' },
+  saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 20, marginBottom: 20, padding: 16, backgroundColor: '#FF9BB3', borderRadius: 14, elevation: 4 },
+  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  editBtnRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginBottom: 20 },
+  deleteEditBtn: { flex: 1, backgroundColor: '#FF6B6B' },
+  selectAllRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
+  selectAllText: { fontSize: 14, fontWeight: '600', color: '#5A5A7A' },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#ddd', alignItems: 'center', justifyContent: 'center' },
+  checkboxChecked: { backgroundColor: '#FF9BB3', borderColor: '#FF9BB3' },
+  smsListContainer: { maxHeight: 350 },
+  smsItem: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
+  smsIcon: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   smsInfo: { flex: 1 },
-  smsMerchant: { fontSize: '13px', fontWeight: '600', color: '#5A5A7A' },
-  smsMetaRow: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' },
-  smsType: { fontSize: '11px', fontWeight: '600' },
-  smsDateText: { fontSize: '11px', color: '#B8B8D0' },
-  smsAmount: { fontSize: '14px', fontWeight: '700' },
-};
+  smsMerchant: { fontSize: 13, fontWeight: '600', color: '#5A5A7A' },
+  smsMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
+  smsType: { fontSize: 11, fontWeight: '600' },
+  smsDateText: { fontSize: 11, color: '#B8B8D0' },
+  smsAmount: { fontSize: 14, fontWeight: '700' },
+  donutCenter: { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -60 }, { translateY: -25 }], width: 120, alignItems: 'center' },
+  donutLabel: { fontSize: 11, color: '#B8B8D0' },
+  donutAmount: { fontSize: 20, fontWeight: '800', color: '#5A5A7A' },
+});
